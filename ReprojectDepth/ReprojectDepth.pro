@@ -7,6 +7,13 @@ TARGET =
 DEPENDPATH += .
 
 win32-msvc2008{
+INCLUDEPATH += "C:\\OpenCV-2.2.0\\release\\include"
+LIBS += -L"C:\\OpenCV-2.2.0\\release\\lib" -lglew32
+CONFIG (debug, debug|release){
+LIBS += -lopencv_highgui220d -lopencv_imgproc220d -lopencv_core220d
+}else{
+LIBS += -lopencv_highgui220 -lopencv_imgproc220 -lopencv_core220
+}
 }
 
 macx-g++{

@@ -14,3 +14,6 @@ moc_*
 /ReprojectDepth/.swp
 .DS_Store
 .swp
+ReprojectDepth/Makefile
+ReprojectDepth/Makefile.Debug
+ReprojectDepth/Makefile.Release
