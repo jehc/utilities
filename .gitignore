@@ -8,3 +8,9 @@ ReprojectDepth/GeneratedFiles/*
 *.idb
 *.pdb
 ReprojectDepth/release/*
+/ReprojectDepth/ReprojectDepth.app/
+*.o
+moc_*
+/ReprojectDepth/.swp
+.DS_Store
+.swp

@@ -5,8 +5,15 @@
 TEMPLATE = app
 TARGET = 
 DEPENDPATH += .
+
+win32-msvc2008{
+}
+
+macx-g++{
 INCLUDEPATH += . /usr/local/Cellar/opencv/2.1.1-pre/include
-LIBS += -L/usr/local/Cellar/opencv/2.1.1-pre/lib/ -lopencv_highgui -lopencv_imgproc -lopencv_core
+LIBS += -L/usr/local/Cellar/glew/1.5.5/lib/ -lGLEW -L/usr/local/Cellar/opencv/2.1.1-pre/lib/ -lopencv_highgui -lopencv_imgproc -lopencv_core
+}
+
 QT += opengl
 CONFIG += debug
 
