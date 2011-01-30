@@ -21,7 +21,7 @@ main ( int argc, char * * argv )
   QObject::connect (&timer, SIGNAL(timeout()), &widget, SLOT(nextImage()));
   app.setActiveWindow ( &widget );
   widget.show ();
-  if (argc == 4)
+  if (argc == 4 && !strcmp (argv[3], "auto"))
   {
     timer.start();
   }

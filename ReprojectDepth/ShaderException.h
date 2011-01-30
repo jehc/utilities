@@ -22,7 +22,7 @@ ShaderException ( ExceptionType type, const std::string & message ) throw( )
 {
 }
 
-const char * what () throw( )
+const char * what ()
 {
   std::stringstream ss;
 
@@ -33,9 +33,6 @@ const char * what () throw( )
     break;
   case LinkError:
     ss << "LinkError: ";
-    break;
-  default:
-    throw std::exception ();
     break;
   }
   ss << message;

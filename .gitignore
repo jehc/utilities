@@ -1,0 +1,10 @@
+
+*.obj
+ReprojectDepth/debug/*
+ReprojectDepth/GeneratedFiles/*
+*.ncb
+*.suo
+*.user
+*.idb
+*.pdb
+ReprojectDepth/release/*

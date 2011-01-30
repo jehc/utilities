@@ -6,6 +6,8 @@
 #include <exception>
 #include <QKeyEvent>
 
+#include <GL/glew.h>
+
 #include "ReprojectDepthWidget.h"
 #include "ShaderException.h"
 
@@ -14,6 +16,13 @@ ReprojectDepthWidget::ReprojectDepthWidget( const std::string & calibFile,
   : init(false), depthPatches ( 0 ), depthColors ( 0 ),
   depthVertices ( 0 ), maxDepth ( 6 ), minDepth (0.4)
 {
+  makeCurrent();
+  GLenum err = glewInit();
+  if (GLEW_OK != err)
+  {
+	  std::cerr << "Error: " << glewGetErrorString(err) << std::endl;
+  }
+
   loadManifest ( imageManifestFile );
   loadCalibParameters ( calibFile );
   setAttribute ( Qt::WA_PaintOnScreen );
@@ -211,14 +220,14 @@ void ReprojectDepthWidget::loadDepthMap ( )
 
 void ReprojectDepthWidget::nextImage()
 {
-  init = true;
-  loadPair();
-  updateGL();
-  savePly();
   if (captureIter == captures.end())
   {
     exit (0);
   }
+  init = true;
+  loadPair();
+  updateGL();
+  //savePly();
 }
 
 void ReprojectDepthWidget::savePly()
@@ -258,7 +267,6 @@ void ReprojectDepthWidget::savePly()
       point.at<double>(1, 0) = j;
       point.at<double>(2, 0) = 1;
       point = rgb_intrinsics.inv() * point;
-      double n = cv::norm(point);
       point = depth.at<float>(j, i) * point;
       output << point.at<double>(0, 0) << " " << point.at<double>(1, 0) << " " << point.at<double>(2, 0) << " ";
       cv::Vec3b c = color.at<cv::Vec3b>(j, i);
@@ -433,8 +441,8 @@ void ReprojectDepthWidget::paintGL ()
     }
   }
   modelview [12] = -T.at<double>(0, 0);
-  modelview [13] = -T.at<double>(0, 1);
-  modelview [14] = -T.at<double>(0, 2);
+  modelview [13] = -T.at<double>(1, 0);
+  modelview [14] = -T.at<double>(2, 0);
   modelview [15] = 1;
 
   double A = (r + l)/(r - l);
