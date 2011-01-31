@@ -31,11 +31,14 @@ using namespace ann_1_1_char;
 
 class Keypoint {
 public:    
-    Keypoint(float x, float y, float scale, float ori, short int *d) :
-	m_x(x), m_y(y), m_scale(scale), m_ori(ori), m_d(d)
-    { }
+    Keypoint(float x, float y, float depth, float scale, float ori, short int *d) :
+	m_x(x), m_y(y), m_depth(depth), m_scale(scale), m_ori(ori), m_d(d)
+    {
+//      std::cerr << "x: " << m_x << " y: " << m_y << " depth: " << m_depth << std::endl; 
+    }
 
     float m_x, m_y;        /* Subpixel location of keypoint. */
+    float m_depth;
     float m_scale, m_ori;  /* Scale and orientation (range [-PI,PI]) */
     short int *m_d;    /* Vector of descriptor values */
 };
@@ -64,6 +67,7 @@ public:
 
 typedef struct {
     float x, y;
+    float depth;
     float scale;
     float orient;
 } keypt_t;

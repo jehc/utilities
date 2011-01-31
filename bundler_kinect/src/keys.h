@@ -37,11 +37,14 @@
 class Keypoint {
 public:    
     Keypoint()  
-    { m_x = 0.0; m_y = 0.0; m_extra = -1; m_track = -1; }
+    { m_x = 0.0; m_y = 0.0; m_depth = 0.0, m_extra = -1; m_track = -1; }
 
-    Keypoint(float x, float y) :
-	m_x(x), m_y(y)
-    { m_r = 0; m_g = 0; m_b = 0; }
+    Keypoint(float x, float y, float depth) :
+	m_x(x), m_y(y), m_depth (depth)
+    { 
+      m_r = 0; m_g = 0; m_b = 0; 
+//      std::cerr << "x: " << m_x << " y: " << m_y << " depth: " << m_depth << std::endl;
+    }
 
     virtual ~Keypoint() {}   
     
@@ -49,7 +52,7 @@ public:
         return NULL;
     }
 
-    float m_x, m_y;        /* Subpixel location of keypoint. */
+    float m_x, m_y, m_depth;        /* Subpixel location of keypoint. */
     // float m_scale, m_ori;  /* Scale and orientation (range [-PI,PI]) */
     unsigned char m_r, m_g, m_b;          /* Color of this key */
 
@@ -67,11 +70,11 @@ public:
     }
 
     KeypointWithDesc()  
-    { m_x = 0.0; m_y = 0.0; m_d = NULL; 
+    { m_x = 0.0; m_y = 0.0; m_depth = 0.0; m_d = NULL; 
         m_extra = -1; m_track = -1; }
 
-    KeypointWithDesc(float x, float y, unsigned char *d) :
-	Keypoint(x, y), m_d(d)
+    KeypointWithDesc(float x, float y, float depth, unsigned char *d) :
+	Keypoint(x, y, depth), m_d(d)
     { }
 
     unsigned char *m_d;    /* Vector of descriptor values */
@@ -131,7 +134,7 @@ public:
 };
 
 typedef struct {
-    float x, y;
+    float x, y, depth;
     float scale;
     float orient;
 } keypt_t;

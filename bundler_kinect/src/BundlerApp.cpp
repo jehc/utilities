@@ -348,7 +348,7 @@ void BundlerApp::ProcessOptions(int argc, char **argv)
             {"image_rescale", 1, 0, '+'},
 
 	    {"help",         0, 0, 'h'},
-
+            {"depth_tuning", 1, 0, 343},
 	    {0, 0, 0, 0}
 	};
 
@@ -360,6 +360,9 @@ void BundlerApp::ProcessOptions(int argc, char **argv)
 	    break;
 	
 	switch (c) {
+            case 343:
+                m_depth_tuning = atoi(optarg);
+                break;
 	    case 'h':
 		/* Print usage */
 		PrintUsage();

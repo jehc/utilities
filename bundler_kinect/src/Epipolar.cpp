@@ -251,12 +251,12 @@ std::vector<int> EstimateFMatrix(const std::vector<KeypointWithDesc> &k1,
     k2_prime.resize(num_keys2);
 
     for (int i = 0; i < num_keys1; i++) {
-        Keypoint k(k1[i].m_x, k1[i].m_y);
+        Keypoint k(k1[i].m_x, k1[i].m_y, k1[i].m_depth);
         k1_prime[i] = k;
     }
     
     for (int i = 0; i < num_keys2; i++) {
-        Keypoint k(k2[i].m_x, k2[i].m_y);
+        Keypoint k(k2[i].m_x, k2[i].m_y, k2[i].m_depth);
         k2_prime[i] = k;
     }
 

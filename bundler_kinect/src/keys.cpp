@@ -213,6 +213,7 @@ std::vector<Keypoint> ReadKeyFile(const char *filename)
     for (int i = 0; i < num_keys; i++) {
         kps[i].m_x = kps_d[i].m_x;
         kps[i].m_y = kps_d[i].m_y;
+        kps[i].m_depth = kps_d[i].m_depth;
     }
 
     kps_d.clear();
@@ -274,6 +275,7 @@ std::vector<KeypointWithScaleRot>
         kps_w[i].m_x = kps[i].m_x;
         kps_w[i].m_y = kps[i].m_y;
         kps_w[i].m_d = kps[i].m_d;
+        kps_w[i].m_depth = kps[i].m_depth;
         kps_w[i].m_scale = scale[i];
         kps_w[i].m_orient = orient[i];
     }
@@ -436,9 +438,9 @@ std::vector<Keypoint> ReadKeys(FILE *fp, bool descriptor)
     for (i = 0; i < num; i++) {
 	/* Allocate memory for the keypoint. */
 	unsigned char *d = new unsigned char[len];
-	float x, y, scale, ori;
+	float x, y, depth, scale, ori;
 
-	if (fscanf(fp, "%f %f %f %f", &y, &x, &scale, &ori) != 4) {
+	if (fscanf(fp, "%f %f %f %f %f", &y, &x, &depth, &scale, &ori) != 5) {
 	    printf("Invalid keypoint file format.");
 	    return kps;
 	}
@@ -452,10 +454,10 @@ std::vector<Keypoint> ReadKeys(FILE *fp, bool descriptor)
 	}
 
 	if (descriptor) {
-	    kps.push_back(KeypointWithDesc(x, y, d));
+	    kps.push_back(KeypointWithDesc(x, y, depth, d));
 	} else {
 	    delete [] d;
-	    kps.push_back(Keypoint(x, y));
+	    kps.push_back(Keypoint(x, y, depth));
 	}
     }
 
@@ -497,9 +499,9 @@ std::vector<KeypointWithDesc> ReadKeysFast(FILE *fp, bool descriptor,
 
     for (i = 0; i < num; i++) {
 	/* Allocate memory for the keypoint. */
-	float x, y, scale, ori;
+	float x, y, depth, scale, ori;
 
-	if (fscanf(fp, "%f %f %f %f\n", &y, &x, &scale, &ori) != 4) {
+	if (fscanf(fp, "%f %f %f %f %f\n", &y, &x, &depth, &scale, &ori) != 5) {
 	    printf("Invalid keypoint file format.");
 	    return kps;
 	}
@@ -551,7 +553,7 @@ std::vector<KeypointWithDesc> ReadKeysFast(FILE *fp, bool descriptor,
 	}
 
         // kps.push_back(KeypointWithDesc(x, y, d));
-        kps[i] = KeypointWithDesc(x, y, d);
+        kps[i] = KeypointWithDesc(x, y, depth, d);
     }
 
     return kps;
@@ -593,11 +595,11 @@ std::vector<KeypointWithDesc> ReadKeysFastGzip(gzFile fp, bool descriptor,
 
     for (i = 0; i < num; i++) {
 	/* Allocate memory for the keypoint. */
-	float x, y, scale, ori;
+	float x, y, depth, scale, ori;
         char buf[1024];
         gzgets(fp, buf, 1024);
 
-	if (sscanf(buf, "%f %f %f %f\n", &y, &x, &scale, &ori) != 4) {
+	if (sscanf(buf, "%f %f %f %f %f\n", &y, &x, &depth, &scale, &ori) != 5) {
 	    printf("Invalid keypoint file format.");
 	    return kps;
 	}
@@ -647,7 +649,7 @@ std::vector<KeypointWithDesc> ReadKeysFastGzip(gzFile fp, bool descriptor,
 	}
 
         // kps.push_back(KeypointWithDesc(x, y, d));
-        kps[i] = KeypointWithDesc(x, y, d);
+        kps[i] = KeypointWithDesc(x, y, depth, d);
     }
 
     return kps;
@@ -680,7 +682,7 @@ std::vector<KeypointWithDesc> ReadKeysFastBin(FILE *fp, bool descriptor,
     for (int i = 0; i < num_keys; i++) {
         keys[i].m_x = info[i].x;
         keys[i].m_y = info[i].y;
-        
+        keys[i].m_depth = info[i].depth;    
         if (scales != NULL)
             (*scales)[i] = info[i].scale;
         if (orients != NULL)
@@ -730,7 +732,7 @@ std::vector<KeypointWithDesc> ReadKeysFastBinGzip(gzFile fp, bool descriptor,
     for (int i = 0; i < num_keys; i++) {
         keys[i].m_x = info[i].x;
         keys[i].m_y = info[i].y;
-        
+        keys[i].m_depth = info[i].depth;
         if (scales != NULL)
             (*scales)[i] = info[i].scale;
         if (orients != NULL)

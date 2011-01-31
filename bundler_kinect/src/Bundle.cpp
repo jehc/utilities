@@ -279,6 +279,7 @@ CheckPointKeyConsistency(const std::vector<ImageKeyVector> pt_views,
 
 void BundlerApp::ReRunSFM(double *S, double *U, double *V, double *W) 
 {
+    std::cerr << "[ReRunSFM]" << std::endl;
     // #define RERUN_ADD_POINTS
 #ifdef RERUN_ADD_POINTS
     /* Compute initial image information */
@@ -538,6 +539,7 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
                           double *S, double *U, double *V, double *W,
                           bool remove_outliers)
 {
+    //std::cerr << "[RunSFM]" << std::endl;
 #define MIN_POINTS 20
     int num_outliers = 0;
     int total_outliers = 0;
@@ -566,7 +568,8 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
         }
 
         vmask = new char[num_pts * num_cameras];
-        projections = new double[2 * num_projections];
+        // @@@ This is going from 2 to 3
+        projections = new double[3 * num_projections];
 
         for (int i = 0; i < num_pts * num_cameras; i++)
             vmask[i] = 0;
@@ -584,9 +587,12 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
 
                     vmask[nz_count * num_cameras + c] = 1;
 
-                    projections[2 * arr_idx + 0] = GetKey(v,k).m_x;
-                    projections[2 * arr_idx + 1] = GetKey(v,k).m_y;
-
+                    // @@@ adding the extra projection element
+                    projections[3 * arr_idx + 0] = GetKey(v,k).m_x;
+                    projections[3 * arr_idx + 1] = GetKey(v,k).m_y;
+                    projections[3 * arr_idx + 2] = m_depth_tuning*GetKey(v, k).m_depth;
+                    // Depth is correct here
+                    //std::cerr << "Depth: " << GetKey(v, k).m_depth << std::endl;
                     arr_idx++;
                 }
 
@@ -706,6 +712,9 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
 
                         dx = pr[0] - key.m_x;
                         dy = pr[1] - key.m_y;
+                        // @@@ ignoring depth for now
+                        // Depth is correct here
+                        //std::cerr << "Depth2: " << key.m_depth << std::endl;
 
                         dist = sqrt(dx * dx + dy * dy);
                         dist_total += dist;
@@ -947,6 +956,7 @@ void BundlerApp::InitializeBundleAdjust(int &num_init_cams,
                                         std::vector<ImageKeyVector> &pt_views,
                                         bool use_constraints)
 {
+    std::cerr << "[InitializeBundleAdjust]" << std::endl;
     int num_images = GetNumImages();
 
     /* Initialize all keypoints to have not been matched */
@@ -1140,6 +1150,7 @@ void BundlerApp::SetupProjections(int num_cameras, int num_points,
                                   int *added_order,
                                   v2_t *projections, char *vmask) 
 {
+    std::cerr << "[SetupProjection]" << std::endl;
     for (int i = 0; i < num_cameras * num_points; i++)
         vmask[i] = 0;
 
@@ -2021,6 +2032,7 @@ void BundlerApp::EstimateIgnoredCameras(int &curr_num_cameras,
 /* Compute pose of all cameras */
 void BundlerApp::BundleAdjust() 
 {
+    std::cerr << "[BundleAdjust]" << std::endl;
     clock_t start = clock();
 
     /* Compute initial image information */
@@ -2497,6 +2509,7 @@ std::vector<int> RefineCameraParameters(const ImageData &data,
                                         double min_proj_error_threshold,
                                         double max_proj_error_threshold)
 {
+    //std::cerr << "[RefineCameraParameters]" << std::endl;
     int num_points_curr = num_points;
     v3_t *points_curr = new v3_t[num_points];
     v2_t *projs_curr = new v2_t[num_points];
@@ -2654,6 +2667,7 @@ double BundlerApp::RefinePoints(int num_points, v3_t *points, v2_t *projs,
                                 const std::vector<ImageKeyVector> &pt_views,
                                 camera_params_t *camera_out)
 {
+    std::cerr << "[RefinePoints]" << std::endl;
     double error = 0.0;
 
     /* Triangulate each of the points */
@@ -2738,6 +2752,7 @@ BundlerApp::RefineCameraAndPoints(const ImageData &data, int num_points,
                                   camera_params_t *camera_out,
                                   bool remove_outliers)
 {
+    std::cerr << "[RefineCameraAndPoints]" << std::endl;
     // double error_thresh = 1.0e-6;
     double error_old = DBL_MAX;
     double derror;
@@ -2847,6 +2862,7 @@ bool FindAndVerifyCamera(int num_points, v3_t *points_solve, v2_t *projs_solve,
                          std::vector<int> &inliers_weak,
                          std::vector<int> &outliers)
 {
+    //std::cerr << "[FindAndVerifyCamera]" << std::endl;
     /* First, find the projection matrix */
     double P[12];
     int r = -1;
@@ -2964,6 +2980,7 @@ BundlerApp::BundleInitializeImage(ImageData &data,
                                   bool *success_out,
                                   bool refine_cameras_and_points)
 {
+    //std::cerr << "[BundleInitializeImage]" << std::endl;
     clock_t start = clock();
 
     if (success_out != NULL)
@@ -3240,6 +3257,7 @@ void BundlerApp::BundleInitializeImageFullBundle(int image_idx, int parent_idx,
                                                  std::vector<ImageKeyVector> 
                                                  &pt_views) 
 {
+    std::cerr << "[BundleInitializeImageFullBundle]" << std::endl;
     m_image_data[image_idx].LoadKeys(false, !m_optimize_for_fisheye);
     m_image_data[image_idx].ReadKeyColors();
 
@@ -3535,6 +3553,7 @@ void BundlerApp::BundleInitializeImageFullBundle(int image_idx, int parent_idx,
 /* Initialize a single image */
 void BundlerApp::BundleImage(char *filename, int parent_img)
 {
+    std::cerr << "[BundleImage]" << std::endl;
     ImageData data;
 
     data.m_name = strdup(filename);
@@ -3584,6 +3603,7 @@ void BundlerApp::BundleImage(char *filename, int parent_img)
 /* Initialize images read from a file */
 void BundlerApp::BundleImagesFromFile(FILE *f)
 {
+    std::cerr << "[BundleImagesFromFile]" << std::endl;
     char buf[256];
 
     if (!m_add_images_fast)
@@ -3653,6 +3673,7 @@ RemoveDuplicateMatches(const std::vector<KeypointMatch> &matches)
 /* Register a new image with the existing model */
 bool BundlerApp::BundleRegisterImage(ImageData &data, bool init_location)
 {
+    std::cerr << "[BundleRegisterImage]" << std::endl;
     printf("[BundleRegisterImage] Registering [%dx%d] image\n",
         data.GetWidth(), data.GetHeight());
 

@@ -213,9 +213,9 @@ int ReadKeys(FILE *fp, unsigned char **keys, keypt_t **info)
     for (i = 0; i < num; i++) {
         /* Allocate memory for the keypoint. */
         // short int *d = new short int[128];
-        float x, y, scale, ori;
+        float x, y, depth, scale, ori;
 
-        if (fscanf(fp, "%f %f %f %f\n", &y, &x, &scale, &ori) != 4) {
+        if (fscanf(fp, "%f %f %f %f %f\n", &y, &x, &depth, &scale, &ori) != 5) {
             printf("Invalid keypoint file format.");
             return 0;
         }
@@ -223,6 +223,7 @@ int ReadKeys(FILE *fp, unsigned char **keys, keypt_t **info)
         if (info != NULL) {
             (*info)[i].x = x;
             (*info)[i].y = y;
+            (*info)[i].depth = depth;
             (*info)[i].scale = scale;
             (*info)[i].orient = ori;
         }
@@ -279,11 +280,11 @@ int ReadKeysGzip(gzFile fp, unsigned char **keys, keypt_t **info)
     for (i = 0; i < num; i++) {
         /* Allocate memory for the keypoint. */
         // short int *d = new short int[128];
-        float x, y, scale, ori;
+        float x, y, depth, scale, ori;
         char buf[1024];
         gzgets(fp, buf, 1024);
 
-        if (sscanf(buf, "%f %f %f %f\n", &y, &x, &scale, &ori) != 4) {
+        if (sscanf(buf, "%f %f %f %f %f\n", &y, &x, &depth, &scale, &ori) != 5) {
             printf("Invalid keypoint file format.");
             return 0;
         }
@@ -291,6 +292,7 @@ int ReadKeysGzip(gzFile fp, unsigned char **keys, keypt_t **info)
         if (info != NULL) {
             (*info)[i].x = x;
             (*info)[i].y = y;
+            (*info)[i].depth = depth;
             (*info)[i].scale = scale;
             (*info)[i].orient = ori;
         }

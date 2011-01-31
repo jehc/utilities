@@ -164,6 +164,8 @@ public:
         m_metric = false;
 
         m_estimate_up_vector_szeliski = false;
+
+        m_depth_tuning = 10;
     
         // bool load_file = false;
     }
@@ -605,6 +607,7 @@ public:
     bool m_enrich_points;        /* Enrich the point set? */
     bool m_zero_distortion_params; /* Set all distortion parameters to
                                     * zero */
+    int m_depth_tuning;
 
     int argc;
     char **argv;
