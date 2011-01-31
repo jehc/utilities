@@ -162,22 +162,6 @@ void ReprojectDepthWidget::loadDepthMap ( )
            image.at<float>( j + 1, i + 1 ) > 0 &&
            image.at<float>( j, i + 1 ) > 0 )
       {
-        // Oh boy.  Copy and paste.  Won't you just love maintaining this code.
-        float depth1 = image.at<float> (j, i);
-        float depth2 = image.at<float> (j, i + 1);
-        float depth3 = image.at<float> (j + 1, i);
-        float depth4 = image.at<float> (j + 1, i + 1);
-
-        float diff1 = abs(depth1 - depth2);
-        float diff2 = abs(depth1 - depth3);
-        float diff3 = abs(depth4 - depth2);
-        float diff4 = abs(depth4 - depth3);
-
-        if (MAX(diff1, MAX(diff2, MAX(diff3, diff4))) > 1)
-        {
-          continue;
-        }
-
         ++validCount;
       }
     }
@@ -199,24 +183,6 @@ void ReprojectDepthWidget::loadDepthMap ( )
         double cy_d = depth_intrinsics.at<double> (1, 2);
         double fx_d = depth_intrinsics.at<double> (0, 0);
         double fy_d = depth_intrinsics.at<double> (1, 1);
-
-        // Let's take a look at if this is a boundary pixel for an object.
-        // We don't really want to bilerp across object boundaries.  Just
-        // discard these if they are too far apart.  Good enough.
-        float depth1 = image.at<float> (j, i);
-        float depth2 = image.at<float> (j, i + 1);
-        float depth3 = image.at<float> (j + 1, i);
-        float depth4 = image.at<float> (j + 1, i + 1);
-
-        float diff1 = abs(depth1 - depth2);
-        float diff2 = abs(depth1 - depth3);
-        float diff3 = abs(depth4 - depth2);
-        float diff4 = abs(depth4 - depth3);
-
-        if (MAX(diff1, MAX(diff2, MAX(diff3, diff4))) > 1)
-        {
-          continue;
-        }
 
         depthVertices[vertexIndex * 6 * 3] = ( i - cx_d ) / fx_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 1] = (j - cy_d) / fy_d * image.at<float>( j, i );
