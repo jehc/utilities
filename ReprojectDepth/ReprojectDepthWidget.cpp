@@ -137,6 +137,7 @@ void ReprojectDepthWidget::loadDepthMap ( )
   cv::Mat image;
   cv::Mat out2;
   cv::undistort ( buffer, image, depth_intrinsics, depth_distortion );
+  cvReleaseImage (&tmp);
   cv::undistort ( buffer2, out2, depth_intrinsics, depth_distortion );
   for ( int i = 0; i < image.cols; ++i )
   {
@@ -273,6 +274,7 @@ void ReprojectDepthWidget::savePly()
       output << (unsigned int)c[0] << " " << (unsigned int)c[1] << " " << (unsigned int)c[2] << std::endl;
     }
   }
+  cvReleaseImage (&tmp);
   output.close();
 }
 
