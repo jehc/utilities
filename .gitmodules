@@ -1,0 +1,3 @@
+[submodule "rgbdemo"]
+	path = rgbdemo
+	url = git@github.com:kmatzen/rgbdemo.git
