@@ -11,12 +11,14 @@ KEYMATCHFULL=KeyMatchFull.exe
 BUNDLE2PMVS=Bundle2PMVS.exe
 BUNDLE2VIS=Bundle2Vis.exe
 RADIALUNDISTORT=RadialUndistort.exe
+INJECTDEPTH=InjectDepth.exe
 else
 BUNDLER=bundler
 KEYMATCHFULL=KeyMatchFull
 BUNDLE2PMVS=Bundle2PMVS
 BUNDLE2VIS=Bundle2Vis
 RADIALUNDISTORT=RadialUndistort
+INJECTDEPTH=InjectDepth
 endif
 
 INCLUDE_PATH=-I../lib/imagelib -I../lib/sfm-driver -I../lib/matrix	\
@@ -70,6 +72,10 @@ $(RADIALUNDISTORT): RadialUndistort.o LoadJPEG.o
 		-lminpack -ljpeg
 	cp $@ ../bin
 
+$(INJECTDEPTH): InjectDepth.o
+	$(CXX) -o $@ $(CPPFLAGS) $(LIB_PATH) $^
+	cp $@ ../bin
+
 clean:
 	rm -f *.o *~ $(BUNDLER) $(KEYMATCHFULL) $(BUNDLE2PMVS) \
-		$(BUNDLE2VIS) $(RADIALUNDISTORT)
+		$(BUNDLE2VIS) $(RADIALUNDISTORT) $(INJECTDEPTH)
