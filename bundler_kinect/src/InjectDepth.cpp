@@ -11,9 +11,9 @@
 int
 main (int argc, char ** argv)
 {
-  if (argc != 4)
+  if (argc != 3)
   {
-    std::cerr << "Usage: <executable> sift_file depth_file mask_file" << std::endl;
+    std::cerr << "Usage: <executable> sift_file depth_file" << std::endl;
     return -1;
   }
 
@@ -52,8 +52,8 @@ main (int argc, char ** argv)
     int xi = x;
     int yi = y;
     float depth = depths.at<float>(yi, xi);
-    ss_new << convert_depth(depth) << " ";
-    for (int i = 2; i < tokens.size(); ++i)
+    ss_new << depth << " ";
+    for (size_t i = 2; i < tokens.size(); ++i)
     {
       ss_new << tokens [i] << " ";
     }
@@ -62,7 +62,7 @@ main (int argc, char ** argv)
       lines.push_back (ss_new.str());
       ++count;
     }
-    for (int i = 0; i < 7; ++i)
+    for (size_t i = 0; i < 7; ++i)
     {
       getline (inputSift, line);
       if (depth != invalid_depth)
@@ -75,7 +75,7 @@ main (int argc, char ** argv)
   inputSift.close();
   std::ofstream output (argv[1]);
   output << count << " 128" << std::endl;
-  for (int i = 0; i < lines.size(); ++i)
+  for (size_t i = 0; i < lines.size(); ++i)
   {
     output << lines[i] << std::endl;
   }
