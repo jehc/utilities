@@ -16,6 +16,7 @@ OpenCV 2.2 is required.  I'm not experienced with the build available in the Ubu
 > cmake ..
 > make
 > sudo make install
+> sudo ldconfig
 
 That's it.  It should tell you where it will be installing everything.
 
