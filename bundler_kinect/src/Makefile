@@ -38,7 +38,7 @@ BUNDLER_OBJS=BaseApp.o BundlerApp.o keys.o Register.o Epipolar.o	\
 	RelativePose.o Distortion.o TwoFrameModel.o LoadJPEG.o
 
 BUNDLER_LIBS=-limage -lsfmdrv -lsba.v1.5 -lmatrix -lz -llapack -lblas \
-	-lcblas -lminpack -lm -l5point -ljpeg -lANN_char -lgfortran
+	-lcblas -lminpack -lm -l5point -ljpeg -lANN_char -lgfortran 
 
 
 all: $(BUNDLER) $(KEYMATCHFULL) $(BUNDLE2PMVS) $(BUNDLE2VIS) $(RADIALUNDISTORT)
@@ -73,7 +73,8 @@ $(RADIALUNDISTORT): RadialUndistort.o LoadJPEG.o
 	cp $@ ../bin
 
 $(INJECTDEPTH): InjectDepth.o
-	$(CXX) -o $@ $(CPPFLAGS) $(LIB_PATH) $^
+	$(CXX) -o $@ $(CPPFLAGS) $(LIB_PATH) $^ \
+		-lopencv_highgui
 	cp $@ ../bin
 
 clean:

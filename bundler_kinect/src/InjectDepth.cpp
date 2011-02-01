@@ -6,12 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <cassert>
-
-float
-convert_depth (uint16_t measurement)
-{
-  return -334.25811/(measurement - 1087.3163);
-}
+#include <opencv2/opencv.hpp>
 
 int
 main (int argc, char ** argv)
@@ -22,38 +17,14 @@ main (int argc, char ** argv)
     return -1;
   }
 
-  const uint16_t invalid_depth = 2047;
+  const float invalid_depth = 0;
 
   int count = 0;
 
-  std::vector<uint16_t> depths;
-  std::vector<bool> masks;
   std::ifstream inputSift (argv[1]);
-  std::ifstream inputDepth (argv[2]);
-  std::ifstream inputMask (argv[3]);
 
-  depths.reserve (640*480);
-  uint16_t depth;
-  while (inputDepth >> depth)
-  {
-    depths.push_back (depth);
-  }
-  assert (depths.size() == 640*480);
-  inputDepth.close();
-
-  masks.reserve(640*480/32/32);
-  double mask;
-  while (inputMask >> mask)
-  {
-    masks.push_back (mask > 0.5);
-  }
-  std::cerr << masks.size() << std::endl;
-  //assert (masks.size() == 640*480/32/32);
-  inputMask.close();
-
-  std::stringstream debug;
-  debug << argv[1] << ".debug";
-  std::ofstream debugOutput (debug.str().c_str());
+  IplImage * tmp = (IplImage *)cvLoad (argv[2]);
+  cv::Mat depths (tmp);
 
   std::vector<std::string> lines;
   std::string firstLine;
@@ -80,33 +51,28 @@ main (int argc, char ** argv)
     float y = atof (tokens[0].c_str());
     int xi = x;
     int yi = y;
-    uint16_t depth = depths [ yi * 640 + xi];
-    bool mask = masks [ (yi/32)*(640/32) + xi/32];
+    float depth = depths.at<float>(yi, xi);
     ss_new << convert_depth(depth) << " ";
     for (int i = 2; i < tokens.size(); ++i)
     {
       ss_new << tokens [i] << " ";
     }
-    if (depth != invalid_depth)// && mask)
+    if (depth != invalid_depth)
     {    
       lines.push_back (ss_new.str());
       ++count;
     }
-    else
-    {
-      debugOutput << x << " " << y << std::endl;
-    }
     for (int i = 0; i < 7; ++i)
     {
       getline (inputSift, line);
-      if (depth != invalid_depth)// && mask)
+      if (depth != invalid_depth)
       {
         lines.push_back (line);
       }
     }
   }
+  cvReleaseImage (&tmp);
   inputSift.close();
-  debugOutput.close();
   std::ofstream output (argv[1]);
   output << count << " 128" << std::endl;
   for (int i = 0; i < lines.size(); ++i)
