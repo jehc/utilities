@@ -41,7 +41,7 @@ BUNDLER_LIBS=-limage -lsfmdrv -lsba.v1.5 -lmatrix -lz -llapack -lblas \
 	-lcblas -lminpack -lm -l5point -ljpeg -lANN_char -lgfortran 
 
 
-all: $(BUNDLER) $(KEYMATCHFULL) $(BUNDLE2PMVS) $(BUNDLE2VIS) $(RADIALUNDISTORT)
+all: $(BUNDLER) $(INJECTDEPTH) $(KEYMATCHFULL) $(BUNDLE2PMVS) $(BUNDLE2VIS) $(RADIALUNDISTORT)
 
 %.o : %.cpp
 	$(CXX) -c -o $@ $(CPPFLAGS) $(WXFLAGS) $(BUNDLER_DEFINES) $<

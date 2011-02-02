@@ -5,7 +5,7 @@
 #include <cassert>
 #include <string>
 
-std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const BundleCamera & camera)
+std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const BundleCamera & camera, int scale)
 {
   std::vector<BundlePoint> points;
 
@@ -68,9 +68,9 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
       }
 
       cv::Mat p (cv::Vec4f(i, j, depth, 1));
-      cv::Mat r (cv::Vec4f(p.at<float>(0, 0)*p.at<float>(2, 0), 
-                           p.at<float>(1, 0)*p.at<float>(2, 0), 
-                           p.at<float>(2, 0), 1));
+      cv::Mat r (cv::Vec4f(scale*p.at<float>(0, 0)*p.at<float>(2, 0), 
+                           scale*p.at<float>(1, 0)*p.at<float>(2, 0), 
+                           scale*p.at<float>(2, 0), 1));
 
       cv::Mat intrinsics = cv::Mat::eye(4, 4, CV_32FC1);
       for (int y = 0; y < cameraMatrix.rows; ++y)
@@ -145,10 +145,16 @@ void SavePly (const std::string & filename, const std::vector<BundlePoint> & poi
 int
 main (int argc, char ** argv)
 {
-  if (argc != 4)
+  if (argc < 4)
   {
-    std::cerr << "Usage: " << argv[0] << " [bundle.out] [list.txt] [output]" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " [bundle.out] [list.txt] [output] {depth_tuning}" << std::endl;
     return -1;
+  }
+
+  int scale = 1;
+  if (argc == 5)
+  {
+    scale = atoi (argv[4]);
   }
 
   BundleFile file (argv[1]);
@@ -174,7 +180,7 @@ main (int argc, char ** argv)
     size_t replacement = filename.find (".color.calib.jpg");
     std::string filename2 (filename);
     filename2.replace (replacement, 16, ".depth.calib.yml");
-    std::vector<BundlePoint> points = LoadCloud (filename, filename2, cameras[index]);
+    std::vector<BundlePoint> points = LoadCloud (filename, filename2, cameras[index], scale);
 //    AddCloud (finalPoints, points);
     std::stringstream ss;
     ss << argv[3] << "/" << index << ".ply";

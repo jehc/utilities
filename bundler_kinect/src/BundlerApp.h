@@ -165,7 +165,7 @@ public:
 
         m_estimate_up_vector_szeliski = false;
 
-        m_depth_tuning = 10;
+        m_depth_tuning = 1;
     
         // bool load_file = false;
     }

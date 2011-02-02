@@ -373,8 +373,8 @@ void sfm_project_rd(camera_params_t *init, double *K, double *k,
 	p[1] *= factor;
     }
     //@@@
-    fprintf (stderr, "@@@ b_cam[2]: %f\n", (float)b_cam[2]);
-    p[2] = b_cam[2];
+    //fprintf (stderr, "@@@ b_cam[2]: %f\n", (float)b_cam[2]);
+    p[2] = -b_cam[2];
 }
 
 static double *global_last_ws = NULL;
