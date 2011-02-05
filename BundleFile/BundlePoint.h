@@ -15,6 +15,8 @@ class BundlePoint
 public:
   BundlePoint () { }
   BundlePoint (const cv::Vec3f &, const cv::Vec3b &);
+  inline cv::Vec3f GetPosition() const { return position; }
+  inline const std::vector<BundleView> & GetViews() const { return views; }
 };
 
 #endif

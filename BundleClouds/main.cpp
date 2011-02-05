@@ -84,19 +84,17 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
       cv::Mat cameraTransform = cv::Mat::eye(4, 4, CV_32FC1);
       const cv::Mat & R = camera.GetR();
       const cv::Mat & t = camera.GetT();
+      cv::Mat z = -R.inv() * t;
       for (int y = 0; y < R.rows; ++y)
       {
         for (int x = 0; x < R.cols; ++x)
         {
-          cameraTransform.at<float>(y, x) = R.at<float>(y, x);
+          cameraTransform.at<float>(y, x) = Rinv.at<float>(y, x);
         }
-        cameraTransform.at<float>(y, R.cols) = t.at<float>(y, 0);
+        cameraTransform.at<float>(y, R.cols) = z.at<float>(y, 0);
       }
 
-      cv::Mat toOpencv = cv::Mat::eye (4, 4, CV_32FC1);
-      toOpencv.at<float>(1, 1) = toOpencv.at<float>(2, 2) = -1;
-
-      cv::Mat projectTransform = intrinsics * toOpencv * cameraTransform;
+      cv::Mat projectTransform = intrinsics * cameraTransform;
 
       p = projectTransform.inv() * r;
       p /= p.at<float>(3, 0);

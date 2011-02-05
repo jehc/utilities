@@ -30,5 +30,12 @@ BundleFile::BundleFile (const std::string & filename)
     input >> *i;
   }
 
+  while (input)
+  {
+    std::string s;
+    getline (input, s);
+    std::cerr << s << std::endl;
+  }
+
   input.close();
 }

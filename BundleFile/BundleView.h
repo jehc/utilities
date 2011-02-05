@@ -9,6 +9,10 @@ class BundleView
   int camera, key;
   float x, y;
   friend istream & operator>> (istream &, BundleView &);
+  public:
+  inline int GetCamera() const { return camera; }
+  inline float GetX() const { return x; }
+  inline float GetY() const { return y; }
 };
 
 #endif

@@ -13,6 +13,7 @@ class BundleFile
   public:
   BundleFile (const std::string &);
   inline const std::vector<BundleCamera> & GetCameras() const { return cameras; }
+  inline const std::vector<BundlePoint> & GetPoints() const { return points; }
 };
 
 #endif
