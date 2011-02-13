@@ -67,7 +67,7 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
         continue;
       }
 
-      cv::Mat p (cv::Vec4f((float)i, (float)j, -depth, 1));
+      cv::Mat p (cv::Vec4f((float)i, (float)j, depth, 1));
       cv::Mat r (cv::Vec4f(scale*p.at<float>(0, 0)*p.at<float>(2, 0), 
                            scale*p.at<float>(1, 0)*p.at<float>(2, 0), 
                            scale*p.at<float>(2, 0), 1));
