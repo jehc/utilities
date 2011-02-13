@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BundleClouds", "BundleClouds.vcproj", "{24F881D7-3343-4641-80AF-7B724D9140FC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{24F881D7-3343-4641-80AF-7B724D9140FC}.Debug|Win32.ActiveCfg = Debug|Win32
+		{24F881D7-3343-4641-80AF-7B724D9140FC}.Debug|Win32.Build.0 = Debug|Win32
+		{24F881D7-3343-4641-80AF-7B724D9140FC}.Release|Win32.ActiveCfg = Release|Win32
+		{24F881D7-3343-4641-80AF-7B724D9140FC}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

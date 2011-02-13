@@ -17,10 +17,10 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
   cv::Mat cameraMatrix (3, 3, CV_32FC1);
   cameraMatrix.at<float> (0, 0) = camera.GetF();
   cameraMatrix.at<float> (0, 1) = 0;
-  cameraMatrix.at<float> (0, 2) = colorImageDist.cols/2;
+  cameraMatrix.at<float> (0, 2) = (float)colorImageDist.cols/2;
   cameraMatrix.at<float> (1, 0) = 0;
   cameraMatrix.at<float> (1, 1) = camera.GetF();
-  cameraMatrix.at<float> (1, 2) = colorImageDist.rows/2;
+  cameraMatrix.at<float> (1, 2) = (float)colorImageDist.rows/2;
   cameraMatrix.at<float> (2, 0) = 0;
   cameraMatrix.at<float> (2, 1) = 0;
   cameraMatrix.at<float> (2, 2) = 1;
@@ -67,7 +67,7 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
         continue;
       }
 
-      cv::Mat p (cv::Vec4f(i, j, depth, 1));
+      cv::Mat p (cv::Vec4f((float)i, (float)j, -depth, 1));
       cv::Mat r (cv::Vec4f(scale*p.at<float>(0, 0)*p.at<float>(2, 0), 
                            scale*p.at<float>(1, 0)*p.at<float>(2, 0), 
                            scale*p.at<float>(2, 0), 1));
@@ -81,21 +81,32 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
         }
       }
 
+	  cv::Mat toOpencv = cv::Mat::eye (4, 4, CV_32FC1);
+      toOpencv.at<float>(1, 1) = toOpencv.at<float>(2, 2) = -1;
+
       cv::Mat cameraTransform = cv::Mat::eye(4, 4, CV_32FC1);
       const cv::Mat & R = camera.GetR();
       const cv::Mat & t = camera.GetT();
-      cv::Mat Rinv = R.inv();
-      cv::Mat z = -Rinv * t;
+	/*  std::cerr << "---" << std::endl;
+	  for (int y = 0; y < 3; ++y)
+	  {
+		  for (int x = 0; x < 3; ++x)
+		  {
+			  std::cerr << Rinv.at<float>(y, x) << " ";
+		  }
+		  std::cerr << std::endl;
+	  }*/
+      cv::Mat z = R * t;
       for (int y = 0; y < R.rows; ++y)
       {
         for (int x = 0; x < R.cols; ++x)
         {
-          cameraTransform.at<float>(y, x) = Rinv.at<float>(y, x);
+          cameraTransform.at<float>(y, x) = R.at<float>(y, x);
         }
-        cameraTransform.at<float>(y, R.cols) = z.at<float>(y, 0);
+        cameraTransform.at<float>(y, R.cols) = t.at<float>(y, 0);
       }
 
-      cv::Mat projectTransform = intrinsics * cameraTransform;
+      cv::Mat projectTransform = intrinsics * toOpencv * cameraTransform;
 
       p = projectTransform.inv() * r;
       p /= p.at<float>(3, 0);
