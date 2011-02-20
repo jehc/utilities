@@ -1,3 +1,4 @@
+#include <cmath>
 #include <fstream>
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -59,8 +60,8 @@ main (int argc, char ** argv)
       {
         for (int y = top; y < bottom; ++y)
         {
-          float horz = abs(depth.at<float>(y, x) - depth.at<float>(y, x + 1));
-          float vert = abs(depth.at<float>(y, x) - depth.at<float>(y + 1, x));
+          float horz = fabs(depth.at<float>(y, x) - depth.at<float>(y, x + 1));
+          float vert = fabs(depth.at<float>(y, x) - depth.at<float>(y + 1, x));
           if (boundary.at<cv::Vec3b>(y, x + 1)[Shadow] == 0)
           {
             sum += horz;
