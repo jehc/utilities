@@ -135,22 +135,18 @@ void ReprojectDepthWidget::loadDepthMap ( )
     }
   }
   cv::Mat image;
-  cv::Mat out2;
-  cv::undistort ( buffer, image, depth_intrinsics, depth_distortion );
+  //We need to avoid linear interpolation here.  Breaking down undistort into
+  //its two components instead.
+  //cv::undistort ( buffer, image, depth_intrinsics, depth_distortion );
+  cv::Mat map1, map2;
+  cv::InitUndistortRectifyMap (depth_intrinsics, depth_distortion, cv::Mat::eye(3, 3, CV_32FC1), depth_intrinsics, buffer.size(), CV_32FC1, map1, map2);
+  cv::remap (buffer, image, map1, map2, cv::INTER_NEAREST);
   cvReleaseImage (&tmp);
-  cv::undistort ( buffer2, out2, depth_intrinsics, depth_distortion );
   for ( int i = 0; i < image.cols; ++i )
   {
     for ( int j = 0; j < image.rows; ++j )
     {
-      if ( image.at<float>( j, i ) != out2.at<float>( j, i ) )
-      {
-        image.at<float>( j, i ) = 0;
-      }
-      else
-      {
-        image.at<float> (j, i) = convertToDepth (image.at<float>(j, i));
-      }
+      image.at<float> (j, i) = convertToDepth (image.at<float>(j, i));
     }
   }
   for ( int i = 0; i < image.cols - 1; ++i )
