@@ -139,6 +139,10 @@ void ReprojectDepthWidget::loadDepthMap ( )
   //its two components instead.
   //cv::undistort ( buffer, image, depth_intrinsics, depth_distortion );
   cv::Mat map1, map2;
+  cv::Mat depth_intrinsics_shifted = depth_intrinsics.clone();
+  //These are taken from ros.org.  I don't really know how to accurately calculate these myself.
+  depth_intrinsics_shifted.at<double>(0, 2) += 4.8;
+  depth_intrinsics_shifted.at<double>(1, 2) += 3.9;
   cv::initUndistortRectifyMap (depth_intrinsics, depth_distortion, cv::Mat::eye(3, 3, CV_32FC1), depth_intrinsics, buffer.size(), CV_32FC1, map1, map2);
   cv::remap (buffer, image, map1, map2, cv::INTER_NEAREST);
   cvReleaseImage (&tmp);
@@ -175,10 +179,10 @@ void ReprojectDepthWidget::loadDepthMap ( )
            image.at<float>( j + 1, i + 1 ) > 0 &&
            image.at<float>( j, i + 1 ) > 0 )
       {
-        double cx_d = depth_intrinsics.at<double> (0, 2);
-        double cy_d = depth_intrinsics.at<double> (1, 2);
-        double fx_d = depth_intrinsics.at<double> (0, 0);
-        double fy_d = depth_intrinsics.at<double> (1, 1);
+        double cx_d = depth_intrinsics_shifted.at<double> (0, 2);
+        double cy_d = depth_intrinsics_shifted.at<double> (1, 2);
+        double fx_d = depth_intrinsics_shifted.at<double> (0, 0);
+        double fy_d = depth_intrinsics_shifted.at<double> (1, 1);
 
         depthVertices[vertexIndex * 6 * 3] = ( i - cx_d ) / fx_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 1] = (j - cy_d) / fy_d * image.at<float>( j, i );
