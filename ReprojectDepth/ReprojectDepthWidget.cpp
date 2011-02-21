@@ -139,7 +139,7 @@ void ReprojectDepthWidget::loadDepthMap ( )
   //its two components instead.
   //cv::undistort ( buffer, image, depth_intrinsics, depth_distortion );
   cv::Mat map1, map2;
-  cv::InitUndistortRectifyMap (depth_intrinsics, depth_distortion, cv::Mat::eye(3, 3, CV_32FC1), depth_intrinsics, buffer.size(), CV_32FC1, map1, map2);
+  cv::initUndistortRectifyMap (depth_intrinsics, depth_distortion, cv::Mat::eye(3, 3, CV_32FC1), depth_intrinsics, buffer.size(), CV_32FC1, map1, map2);
   cv::remap (buffer, image, map1, map2, cv::INTER_NEAREST);
   cvReleaseImage (&tmp);
   for ( int i = 0; i < image.cols; ++i )
