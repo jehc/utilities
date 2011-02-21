@@ -21,6 +21,10 @@ INCLUDEPATH += . /usr/local/Cellar/opencv/2.1.1-pre/include
 LIBS += -L/usr/local/Cellar/glew/1.5.5/lib/ -lGLEW -L/usr/local/Cellar/opencv/2.1.1-pre/lib/ -lopencv_highgui -lopencv_imgproc -lopencv_core
 }
 
+linux-g++-64{
+LIBS += -lopencv_highgui -lopencv_imgproc -lopencv_core -lGLEW
+}
+
 linux-g++{
 LIBS += -lopencv_highgui -lopencv_imgproc -lopencv_core -lGLEW
 }
