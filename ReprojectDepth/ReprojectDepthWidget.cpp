@@ -192,17 +192,17 @@ void ReprojectDepthWidget::loadDepthMap ( )
         depthVertices[vertexIndex * 6 * 3 + 3] = ( i + 1 - cx_d ) / fx_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 4] = (( j + 1 ) - cy_d ) / fy_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 5] = image.at<float>( j + 1, i + 1 );
-        depthColors[vertexIndex * 6 + 1] = image.at<float>( j + 1, i + 1 ) / maxDepth;
+        depthColors[vertexIndex * 6 + 1] = image.at<float>( j, i ) / maxDepth;
 
         depthVertices[vertexIndex * 6 * 3 + 6] = ( i + 1 - cx_d ) / fx_d * image.at<float>( j, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 7] = (j - cy_d ) / fy_d * image.at<float>( j, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 8] = image.at<float>( j, i + 1 );
-        depthColors[vertexIndex * 6 + 2] = image.at<float>( j, i + 1 ) / maxDepth;
+        depthColors[vertexIndex * 6 + 2] = image.at<float>( j, i ) / maxDepth;
 
         depthVertices[vertexIndex * 6 * 3 + 9] = ( i + 1 - cx_d ) / fx_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 10] = (( j + 1 ) - cy_d)  / fy_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 11] = image.at<float>( j + 1, i + 1 );
-        depthColors[vertexIndex * 6 + 3] = image.at<float>( j + 1, i + 1 ) / maxDepth;
+        depthColors[vertexIndex * 6 + 3] = image.at<float>( j, i ) / maxDepth;
 
         depthVertices[vertexIndex * 6 * 3 + 12] = ( i - cx_d ) / fx_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 13] = (j - cy_d ) / fy_d * image.at<float>( j, i );
@@ -212,7 +212,7 @@ void ReprojectDepthWidget::loadDepthMap ( )
         depthVertices[vertexIndex * 6 * 3 + 15] = ( i - cx_d ) / fx_d * image.at<float>( j + 1, i );
         depthVertices[vertexIndex * 6 * 3 + 16] = (( j + 1 ) - cy_d) / fy_d * image.at<float>( j + 1, i );
         depthVertices[vertexIndex * 6 * 3 + 17] = image.at<float>( j + 1, i );
-        depthColors[vertexIndex * 6 + 5] = image.at<float>( j + 1, i ) / maxDepth;
+        depthColors[vertexIndex * 6 + 5] = image.at<float>( j, i ) / maxDepth;
         ++vertexIndex;
       }
     }
