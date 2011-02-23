@@ -48,14 +48,14 @@ void ReprojectDepthWidget::loadPair ( )
 void ReprojectDepthWidget::loadColorImage()
 {
   std::stringstream ss_color;
-  ss_color << *currentIter << ".color.png";
+  ss_color << *currentIter << "color.png";
  
   cv::Mat temp = cv::imread ( ss_color.str().c_str () );
   cv::Mat colorImage;
   cv::undistort ( temp, colorImage, rgb_intrinsics, rgb_distortion );
 
   std::stringstream ss_color_calib;
-  ss_color_calib << *currentIter << ".color.calib.jpg";
+  ss_color_calib << *currentIter << "color.calib.jpg";
   cv::imwrite (ss_color_calib.str().c_str(), colorImage);
 }
 
@@ -104,7 +104,7 @@ void ReprojectDepthWidget::loadDepthMap ( )
   const float invalidDepth = 2046;
   const int border = 0;
   std::stringstream ss;
-  ss << *currentIter << ".depth.yml";
+  ss << *currentIter << "depth.yml";
   IplImage * tmp = (IplImage *)cvLoad (ss.str().c_str());
   cv::Mat buffer (tmp);
   int validCount = 0;
@@ -234,11 +234,11 @@ void ReprojectDepthWidget::nextImage()
 void ReprojectDepthWidget::savePly()
 {
   std::stringstream ss_color;
-  ss_color << *currentIter << ".color.calib.jpg";
+  ss_color << *currentIter << "color.calib.jpg";
   cv::Mat color = cv::imread (ss_color.str().c_str());
 
   std::stringstream ss_depth;
-  ss_depth << *currentIter << ".depth.calib.yml";
+  ss_depth << *currentIter << "depth.calib.yml";
   IplImage * tmp = (IplImage *)cvLoad (ss_depth.str().c_str());
   cv::Mat depth (tmp);
 
@@ -511,7 +511,7 @@ void ReprojectDepthWidget::paintGL ()
     }
   }
   std::stringstream ss;
-  ss << *currentIter << ".depth.calib.yml";
+  ss << *currentIter << "depth.calib.yml";
   IplImage tmp = finalDepth;
   cvSave (ss.str().c_str(), &tmp);
 }
