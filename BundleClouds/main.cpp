@@ -33,27 +33,16 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
   distCoeffs.at<float> (3, 0) = 0;
   distCoeffs.at<float> (4, 0) = 0;
 
-  cv::Mat depth2 (depthMapDist.rows, depthMapDist.cols, CV_32FC1);
-  for (int j = 0; j < depth2.rows; ++j)
-  {
-    for (int i = 0; i < depth2.cols; ++i)
-    {
-      if (depthMapDist.at<float>(j, i) < 0.001)
-      {
-        depth2.at<float>(j, i) = 100000;
-      }
-      else
-      {
-        depth2.at<float>(j, i) = depthMapDist.at<float>(j, i);
-      }
-    }
-  }
-
-  cv::Mat colorImage, depthMap, depthMap2;
+  cv::Mat colorImage, depthMap;
 
   cv::undistort (colorImageDist, colorImage, cameraMatrix, distCoeffs);
-  cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
-  cv::undistort (depth2, depthMap2, cameraMatrix, distCoeffs);
+
+  //Linear interpolation; do not want
+  //cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
+
+  cv::Mat map1, map2;
+  cv::initUndistortRectifyMap (cameraMatrix, distCoeffs, cv::Mat::eye (3, 3, CV_32FC1), cameraMatrix, depthMapDist.size(), CV_32FC1, map1, map2);
+  cv::remap (depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST);
 
   cvReleaseImage (&tmp);
 
@@ -61,8 +50,8 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
   {
     for (int i = 0; i < depthMap.cols; ++i)
     {
-      float depth = depthMap.at<float> (j, i);
-      if (depth != depthMap2.at<float>(j, i))
+      float depth = depthMapDist.at<float> (j, i);
+      if (depth < 0.0001)
       {
         continue;
       }
