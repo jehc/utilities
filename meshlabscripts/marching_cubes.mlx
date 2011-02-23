@@ -1,0 +1,12 @@
+<!DOCTYPE FilterScript>
+<FilterScript>
+ <filter name="Marching Cubes (RIMLS)">  <Param tooltip="Scale of the spatial low pass filter.&#xa;It is relative to t
+he radius (local point spacing) of the vertices." description="MLS - Filter scale" type="RichFloat" value="2" name="FilterScale"/>  <Param tooltip="Threshold value used to stop the projections.&#xa;This value is scaled by the mean point spacing to get the actual threshold." description="
+Projection - Accuracy (adv)" type="RichFloat" value="0.0001" name="ProjectionAccuracy"/>  <Param tooltip="Max number of iterations for the projection." description="Pr
+ojection - Max iterations (adv)" type="RichInt" value="15" name="MaxProjectionIters"/>  <Param tooltip="Width of the filter used by the normal refitting weight.This weight function is a Gaussian on the distance between two unit vectors:the current gradient and the input normal. Therefore, typical value range between 0.5 (
+sharp) to 2 (smooth)." description="MLS - Sharpness" type="RichFloat" value="0.75" name="SigmaN"/>  <Param tooltip="Max number of fitting iterations. (0 or 1 is equivalent to th
+e standard IMLS)" description="MLS - Max fitting iterations" type="RichInt" value="3" name="MaxRefittingIters"/>  <Param tooltip="The resolution of the grid on which we run the marching cubes.This marching cube is memory friendly, so you can safely set large values up t
+o 1000 or even more." description="Grid Resolution" type="RichInt" value="200" 
+name="Resolution"/>
+ </filter>
+</FilterScript>
