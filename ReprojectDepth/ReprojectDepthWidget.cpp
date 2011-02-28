@@ -52,7 +52,12 @@ void ReprojectDepthWidget::loadColorImage()
  
   cv::Mat temp = cv::imread ( ss_color.str().c_str () );
   cv::Mat colorImage;
-  cv::undistort ( temp, colorImage, rgb_intrinsics, rgb_distortion );
+  
+  cv::Mat map1, map2;
+  cv::initUndistortRectifyMap (rgb_intrinsics, rgb_distortion, cv::Mat::eye(3, 3, CV_32FC1), rgb_intrinsics_corrected, temp.size(), CV_32FC1, map1, map2);
+  cv::remap (temp, colorImage, map1, map2, cv::INTER_LINEAR);
+
+  //cv::undistort ( temp, colorImage, rgb_intrinsics, rgb_distortion );
 
   std::stringstream ss_color_calib;
   ss_color_calib << *currentIter << "color.calib.jpg";
@@ -85,6 +90,16 @@ void ReprojectDepthWidget::loadCalibParameters ( const std::string & filename )
   fs["depth_base_and_offset"] >> depth_base_and_offset;
 
   fs.release();
+
+  depth_intrinsics_shifted = depth_intrinsics.clone();
+  //These are taken from ros.org.  I don't really know how to accurately calculate these myself.
+  depth_intrinsics_shifted.at<double>(0, 2) += 4.8;
+  depth_intrinsics_shifted.at<double>(1, 2) += 3.9;
+
+  rgb_intrinsics_corrected.at<double>(0, 0) = 523;
+  rgb_intrinsics_corrected.at<double>(1, 1) = 523;
+  rgb_intrinsics_corrected.at<double>(0, 2) = 320;
+  rgb_intrinsics_corrected.at<double>(1, 2) = 240;
 }
 
 void ReprojectDepthWidget::loadDepthMap ( )
@@ -139,10 +154,6 @@ void ReprojectDepthWidget::loadDepthMap ( )
   //its two components instead.
   //cv::undistort ( buffer, image, depth_intrinsics, depth_distortion );
   cv::Mat map1, map2;
-  cv::Mat depth_intrinsics_shifted = depth_intrinsics.clone();
-  //These are taken from ros.org.  I don't really know how to accurately calculate these myself.
-  depth_intrinsics_shifted.at<double>(0, 2) += 4.8;
-  depth_intrinsics_shifted.at<double>(1, 2) += 3.9;
   cv::initUndistortRectifyMap (depth_intrinsics, depth_distortion, cv::Mat::eye(3, 3, CV_32FC1), depth_intrinsics, buffer.size(), CV_32FC1, map1, map2);
   cv::remap (buffer, image, map1, map2, cv::INTER_NEAREST);
   cvReleaseImage (&tmp);
@@ -228,7 +239,7 @@ void ReprojectDepthWidget::nextImage()
   init = true;
   loadPair();
   updateGL();
-  //savePly();
+  savePly();
 }
 
 void ReprojectDepthWidget::savePly()
@@ -417,10 +428,10 @@ void ReprojectDepthWidget::paintGL ()
   }
   double n = minDepth;
   double f = maxDepth;
-  double cx_rgb = rgb_intrinsics.at<double> (0, 2);
-  double cy_rgb = rgb_intrinsics.at<double> (1, 2);
-  double fx_rgb = rgb_intrinsics.at<double> (0, 0);
-  double fy_rgb = rgb_intrinsics.at<double> (1, 1);
+  double cx_rgb = rgb_intrinsics_corrected.at<double> (0, 2);
+  double cy_rgb = rgb_intrinsics_corrected.at<double> (1, 2);
+  double fx_rgb = rgb_intrinsics_corrected.at<double> (0, 0);
+  double fy_rgb = rgb_intrinsics_corrected.at<double> (1, 1);
   double fw = n * width() / fx_rgb;
   double l = fw * ( -cx_rgb / width() );
   double fh = n * height() / fy_rgb;
