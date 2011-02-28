@@ -14,9 +14,11 @@ int depthPatches;
 
 cv::Mat rgb_intrinsics;
 cv::Mat rgb_distortion;
+cv::Mat rgb_intrinsics_corrected;
 
 cv::Mat depth_intrinsics;
 cv::Mat depth_distortion;
+cv::Mat depth_intrinsics_shifted;
 
 cv::Mat R;
 cv::Mat T;
