@@ -5,7 +5,7 @@
 #include <cassert>
 #include <string>
 
-std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const BundleCamera & camera, int scale)
+std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const BundleCamera & camera, float scale)
 {
   std::vector<BundlePoint> points;
 
@@ -50,55 +50,22 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
   {
     for (int i = 0; i < depthMap.cols; ++i)
     {
-      float depth = depthMapDist.at<float> (j, i);
+      float depth = depthMap.at<float> (j, i);
       if (depth < 0.0001)
       {
         continue;
       }
 
-      cv::Mat p (cv::Vec4f((float)i, (float)j, depth, 1));
-      cv::Mat r (cv::Vec4f(scale*p.at<float>(0, 0)*p.at<float>(2, 0), 
-                           scale*p.at<float>(1, 0)*p.at<float>(2, 0), 
-                           scale*p.at<float>(2, 0), 1));
+      cv::Mat p (cv::Vec3f((float)i, (float)depthMap.rows - 1.0 - (float)j, 1));
+      p = depth*p;
 
-      cv::Mat intrinsics = cv::Mat::eye(4, 4, CV_32FC1);
-      for (int y = 0; y < cameraMatrix.rows; ++y)
-      {
-        for (int x = 0; x < cameraMatrix.cols; ++x)
-        {
-          intrinsics.at<float>(y, x) = cameraMatrix.at<float>(y, x);
-        }
-      }
+      p = cameraMatrix.inv() * p;
+      p.at<float>(2, 0) *= -1;
 
-	  cv::Mat toOpencv = cv::Mat::eye (4, 4, CV_32FC1);
-      toOpencv.at<float>(1, 1) = toOpencv.at<float>(2, 2) = -1;
-
-      cv::Mat cameraTransform = cv::Mat::eye(4, 4, CV_32FC1);
       const cv::Mat & R = camera.GetR();
       const cv::Mat & t = camera.GetT();
-	/*  std::cerr << "---" << std::endl;
-	  for (int y = 0; y < 3; ++y)
-	  {
-		  for (int x = 0; x < 3; ++x)
-		  {
-			  std::cerr << Rinv.at<float>(y, x) << " ";
-		  }
-		  std::cerr << std::endl;
-	  }*/
-      cv::Mat z = R * t;
-      for (int y = 0; y < R.rows; ++y)
-      {
-        for (int x = 0; x < R.cols; ++x)
-        {
-          cameraTransform.at<float>(y, x) = R.at<float>(y, x);
-        }
-        cameraTransform.at<float>(y, R.cols) = t.at<float>(y, 0);
-      }
-
-      cv::Mat projectTransform = intrinsics * toOpencv * cameraTransform;
-
-      p = projectTransform.inv() * r;
-      p /= p.at<float>(3, 0);
+      p = p - t/scale;
+      p = R.t() * p;
 
       BundlePoint point (cv::Vec3f(p.at<float>(0, 0), p.at<float>(1, 0), p.at<float>(2, 0)), colorImage.at<cv::Vec3b> (j, i));
       points.push_back (point);
@@ -176,9 +143,11 @@ main (int argc, char ** argv)
       ++index;
       continue;
     }
-    size_t replacement = filename.find (".color.calib.jpg");
+    std::cerr << filename << std::endl;
+    size_t replacement = filename.find ("color.calib.jpg");
     std::string filename2 (filename);
-    filename2.replace (replacement, 16, ".depth.calib.yml");
+    filename2.replace (replacement, 15, "depth.calib.yml");
+    std::cerr << filename2 << std::endl;
     std::vector<BundlePoint> points = LoadCloud (filename, filename2, cameras[index], scale);
 //    AddCloud (finalPoints, points);
     std::stringstream ss;
