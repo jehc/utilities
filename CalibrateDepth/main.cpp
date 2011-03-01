@@ -64,7 +64,7 @@ main (int argc, char ** argv)
       break;
     }
     getline (list, junk);
-    filename.replace (filename.find (".color.calib.jpg"), 16, ".depth.calib.yml");
+    filename.replace (filename.find ("color.calib.jpg"), 15, "depth.calib.yml");
     depthFiles.push_back (filename);
   }
   list.close();
@@ -74,6 +74,11 @@ main (int argc, char ** argv)
 
   depthCache.resize (cameras.size());
   cached.resize (cameras.size());
+  float num = 0;
+  float den = 0;
+  float mean = 0;
+  float var = 0;
+  int n = 0;
   for (std::vector<BundlePoint>::const_iterator i = points.begin(); i != points.end(); ++i)
   {
     const std::vector<BundleView> views = i->GetViews();
@@ -90,8 +95,32 @@ main (int argc, char ** argv)
       }
       // Get distance from camera to point
       float depthCorrect = depthFromBundle (cameras, *i, *j);
-      std::cerr << depthGuess << " " << depthCorrect << std::endl;
+      std::cerr << j->GetCamera() << " " << depthGuess << " " << depthCorrect << std::endl;
+      num += depthCorrect*depthGuess;
+      den += depthGuess*depthGuess;
+      ++n;
+      mean += depthCorrect/depthGuess;
+      var += (depthCorrect*depthCorrect)/(depthGuess*depthGuess);
       dataPoints.push_back (std::make_pair<float, float> (depthGuess, depthCorrect));
     }
+  }
+  float scale = num/den;
+  mean /= n;
+  var /= n;
+  var -= mean*mean;
+  float min = scale - sqrt(var);
+  float max = scale + sqrt(var);
+  num = 0;
+  den = 0;
+  for (size_t i = 0; i < dataPoints.size(); ++i)
+  {
+    const std::pair<float, float> & p = dataPoints[i];
+    float ratio = p.second/p.first;
+    if (ratio > min && ratio < max)
+    {
+      num += p.first*p.second;
+      den += p.first*p.first;
+    }
   }  
+  std::cout << num/den << std::endl;
 }
