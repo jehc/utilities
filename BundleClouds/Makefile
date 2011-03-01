@@ -1,4 +1,4 @@
-CXXFLAGS     = -O3
+CXXFLAGS     = -g
 LIBS         = -lBundleFile -lopencv_core -lopencv_highgui 
  
 all:	BundleClouds
