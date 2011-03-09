@@ -158,21 +158,14 @@ void ReprojectDepthWidget::loadDepthMap ( )
   cv::initUndistortRectifyMap (depth_intrinsics, depth_distortion, cv::Mat::eye(3, 3, CV_32FC1), depth_intrinsics, buffer.size(), CV_32FC1, map1, map2);
   cv::remap (buffer, image, map1, map2, cv::INTER_NEAREST);
   cvReleaseImage (&tmp);
-  for ( int i = 0; i < image.cols; ++i )
-  {
-    for ( int j = 0; j < image.rows; ++j )
-    {
-      image.at<float> (j, i) = convertToDepth (image.at<float>(j, i));
-    }
-  }
   for ( int i = 0; i < image.cols - 1; ++i )
   {
     for ( int j = 0; j < image.rows - 1; ++j )
     {
-      if ( image.at<float>( j, i ) > 0 &&
-           image.at<float>( j + 1, i ) > 0 &&
-           image.at<float>( j + 1, i + 1 ) > 0 &&
-           image.at<float>( j, i + 1 ) > 0 )
+      if ( image.at<float>( j, i ) < 2048 &&
+           image.at<float>( j + 1, i ) < 2048 &&
+           image.at<float>( j + 1, i + 1 ) < 2048 &&
+           image.at<float>( j, i + 1 ) < 2048 )
       {
         ++validCount;
       }
@@ -180,17 +173,23 @@ void ReprojectDepthWidget::loadDepthMap ( )
   }
   depthPatches = validCount;
   depthVertices = new GLfloat[validCount * 6 * 3];
-  depthColors = new GLfloat[validCount * 6];
+  depthColors = new GLfloat[validCount * 6 * 3];
   int vertexIndex = 0;
   for ( int i = 0; i < image.cols - 1; ++i )
   {
     for ( int j = 0; j < image.rows - 1; ++j )
     {
-      if ( image.at<float>( j, i ) > 0 &&
-           image.at<float>( j + 1, i ) > 0 &&
-           image.at<float>( j + 1, i + 1 ) > 0 &&
-           image.at<float>( j, i + 1 ) > 0 )
+      if ( image.at<float>( j, i ) < 2048 &&
+           image.at<float>( j + 1, i ) < 2048 &&
+           image.at<float>( j + 1, i + 1 ) < 2048 &&
+           image.at<float>( j, i + 1 ) < 2048 )
       {
+        float d = image.at<float>(j, i);
+        float b = d / (16*16*16);
+        d -= b * 16*16*16;
+        float r = d / (16*16);
+        d -= r * 16*16;
+        float g = d / 16;
         double cx_d = depth_intrinsics_shifted.at<double> (0, 2);
         double cy_d = depth_intrinsics_shifted.at<double> (1, 2);
         double fx_d = depth_intrinsics_shifted.at<double> (0, 0);
@@ -199,32 +198,44 @@ void ReprojectDepthWidget::loadDepthMap ( )
         depthVertices[vertexIndex * 6 * 3] = ( i - cx_d ) / fx_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 1] = (j - cy_d) / fy_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 2] = image.at<float>( j, i );
-        depthColors[vertexIndex * 6] = image.at<float>( j, i ) / maxDepth;
+        depthColors[vertexIndex * 6 * 3] = r;
+        depthColors[vertexIndex * 6 * 3 + 1] = g;
+        depthColors[vertexIndex * 6 * 3 + 2] = b;
         
         depthVertices[vertexIndex * 6 * 3 + 3] = ( i + 1 - cx_d ) / fx_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 4] = (( j + 1 ) - cy_d ) / fy_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 5] = image.at<float>( j + 1, i + 1 );
-        depthColors[vertexIndex * 6 + 1] = image.at<float>( j, i ) / maxDepth;
+        depthColors[vertexIndex * 6 * 3 + 3] = r;
+        depthColors[vertexIndex * 6 * 3 + 4] = g;
+        depthColors[vertexIndex * 6 * 3 + 5] = b;
 
         depthVertices[vertexIndex * 6 * 3 + 6] = ( i + 1 - cx_d ) / fx_d * image.at<float>( j, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 7] = (j - cy_d ) / fy_d * image.at<float>( j, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 8] = image.at<float>( j, i + 1 );
-        depthColors[vertexIndex * 6 + 2] = image.at<float>( j, i ) / maxDepth;
+        depthColors[vertexIndex * 6 * 3 + 6] = r;
+        depthColors[vertexIndex * 6 * 3 + 7] = g;
+        depthColors[vertexIndex * 6 * 3 + 8] = b;
 
         depthVertices[vertexIndex * 6 * 3 + 9] = ( i + 1 - cx_d ) / fx_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 10] = (( j + 1 ) - cy_d)  / fy_d * image.at<float>( j + 1, i + 1 );
         depthVertices[vertexIndex * 6 * 3 + 11] = image.at<float>( j + 1, i + 1 );
-        depthColors[vertexIndex * 6 + 3] = image.at<float>( j, i ) / maxDepth;
+        depthColors[vertexIndex * 6 * 3 + 9] = r;
+        depthColors[vertexIndex * 6 * 3 + 10] = g;
+        depthColors[vertexIndex * 6 * 3 + 11] = b;
 
         depthVertices[vertexIndex * 6 * 3 + 12] = ( i - cx_d ) / fx_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 13] = (j - cy_d ) / fy_d * image.at<float>( j, i );
         depthVertices[vertexIndex * 6 * 3 + 14] = image.at<float>( j, i );
-        depthColors[vertexIndex * 6 + 4] = image.at<float>( j, i ) / maxDepth;
+        depthColors[vertexIndex * 6 * 3 + 12] = r;
+        depthColors[vertexIndex * 6 * 3 + 13] = g;
+        depthColors[vertexIndex * 6 * 3 + 14] = b;
 
         depthVertices[vertexIndex * 6 * 3 + 15] = ( i - cx_d ) / fx_d * image.at<float>( j + 1, i );
         depthVertices[vertexIndex * 6 * 3 + 16] = (( j + 1 ) - cy_d) / fy_d * image.at<float>( j + 1, i );
         depthVertices[vertexIndex * 6 * 3 + 17] = image.at<float>( j + 1, i );
-        depthColors[vertexIndex * 6 + 5] = image.at<float>( j, i ) / maxDepth;
+        depthColors[vertexIndex * 6 * 3 + 15] = r;
+        depthColors[vertexIndex * 6 * 3 + 16] = g;
+        depthColors[vertexIndex * 6 * 3 + 17] = b;
         ++vertexIndex;
       }
     }
@@ -335,7 +346,7 @@ void ReprojectDepthWidget::initializeGL ()
     "void main(void)\n"
     "{\n"
     "  gl_Position = ProjectionMatrix * ModelViewMatrix * vec4(vertex.xyz, 1);\n"
-    "  newColor = vec4(0, color.r, 0, 1);\n"
+    "  newColor = vec4(color.rgb, 1);\n"
     "}\n"
   };
 
@@ -500,7 +511,7 @@ void ReprojectDepthWidget::paintGL ()
 
   glEnableVertexAttribArray ( depthVertexAttribute );
 
-  glVertexAttribPointer ( depthColorAttribute, 1, GL_FLOAT, GL_FALSE, 0,
+  glVertexAttribPointer ( depthColorAttribute, 3, GL_FLOAT, GL_FALSE, 0,
                           depthColors );
 
   glEnableVertexAttribArray ( depthColorAttribute );
@@ -511,15 +522,19 @@ void ReprojectDepthWidget::paintGL ()
 
   glDisableVertexAttribArray ( depthColorAttribute );
 	
-  std::vector<float> final;
-  final.resize(width()*height());
-  glReadPixels(0, 0, width(), height(), GL_GREEN, GL_FLOAT, &final[0]);
+  std::vector<float> final1, final2, final3;
+  final1.resize(width()*height());
+  final2.resize(width()*height());
+  final3.resize(width()*height());
+  glReadPixels(0, 0, width(), height(), GL_GREEN, GL_FLOAT, &final1[0]);
+  glReadPixels(0, 0, width(), height(), GL_RED, GL_FLOAT, &final2[0]);
+  glReadPixels(0, 0, width(), height(), GL_BLUE, GL_FLOAT, &final3[0]);
   cv::Mat finalDepth (height(), width(), CV_32FC1);
   for (int j = 0; j < height(); ++j)
   {
     for (int i = 0; i < width(); ++i)
     {
-      finalDepth.at<float> (j, i) = final[(finalDepth.rows - 1 - j)*640 + i] * maxDepth;
+      finalDepth.at<float> (j, i) = convertToDepth(final3[(finalDepth.rows - 1 - j)*640 + i] * 16*16*16 + final2[(finalDepth.rows - 1 - j)*640 + i] * 16*16 + final1[(finalDepth.rows - 1 - j)*640 + i] * 16);
     }
   }
   std::stringstream ss;
