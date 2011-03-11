@@ -96,6 +96,7 @@ void ReprojectDepthWidget::loadCalibParameters ( const std::string & filename )
   depth_intrinsics_shifted.at<double>(0, 2) += 4.8;
   depth_intrinsics_shifted.at<double>(1, 2) += 3.9;
 
+  rgb_intrinsics_corrected = rgb_intrinsics.clone();
   rgb_intrinsics_corrected.at<double>(0, 0) = 523;
   rgb_intrinsics_corrected.at<double>(1, 1) = 523;
   rgb_intrinsics_corrected.at<double>(0, 2) = 320;
@@ -250,7 +251,7 @@ void ReprojectDepthWidget::nextImage()
   init = true;
   loadPair();
   updateGL();
-  savePly();
+  //savePly();
 }
 
 void ReprojectDepthWidget::savePly()
