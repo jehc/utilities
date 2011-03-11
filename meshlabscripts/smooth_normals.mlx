@@ -1,0 +1,7 @@
+<!DOCTYPE FilterScript>
+<FilterScript>
+ <filter name="Smooths normals on a point sets">
+  <Param type="RichInt" value="20" name="K"/>
+  <Param type="RichBool" value="false" name="useDist"/>
+ </filter>
+</FilterScript>
