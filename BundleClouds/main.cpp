@@ -4,8 +4,39 @@
 #include <iostream>
 #include <cassert>
 #include <string>
+#include <exception>
+#include <set>
 
-std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const BundleCamera & camera, float scale)
+std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
+{
+  std::ifstream input (keypointFilename.c_str());
+  std::set<std::pair<int, int> > keys;
+  if (!input)
+  {
+    std::cerr << "Keypoint file " << keypointFilename << " not found" << std::endl;
+    throw std::exception();
+  }
+  std::string junk;
+  getline (input, junk);
+  while (input)
+  {
+    float x, y;
+    if (!(input >> x))
+    {
+      break;
+    }
+    if (!(input >> y))
+    {
+      break;
+    }
+    getline(input, junk);
+    keys.insert(std::make_pair(y, x));
+  }
+  input.close();
+  return keys;
+}
+
+std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, bool colorKeys, const BundleCamera & camera, float scale)
 {
   std::vector<BundlePoint> points;
 
@@ -37,6 +68,8 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
 
   cv::undistort (colorImageDist, colorImage, cameraMatrix, distCoeffs);
 
+  std::set<std::pair<int, int> > keys = LoadKeys (keypointFilename);
+
   //Linear interpolation; do not want
   //cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
 
@@ -66,9 +99,16 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
       const cv::Mat & t = camera.GetT();
       p = p - t/scale;
       p = R.t() * p;
-
-      BundlePoint point (cv::Vec3f(p.at<float>(0, 0), p.at<float>(1, 0), p.at<float>(2, 0)), colorImage.at<cv::Vec3b> (j, i));
-      points.push_back (point);
+      if (colorKeys && keys.count (std::make_pair(j, i)))
+      {
+        BundlePoint point (cv::Vec3f(p.at<float>(0, 0), p.at<float>(1, 0), p.at<float>(2, 0)), cv::Vec3b(0, 0, 255));
+        points.push_back (point);
+      }
+      else
+      {
+        BundlePoint point (cv::Vec3f(p.at<float>(0, 0), p.at<float>(1, 0), p.at<float>(2, 0)), colorImage.at<cv::Vec3b> (j, i));
+        points.push_back (point);
+      }
     }
   }
   return points;
@@ -113,14 +153,20 @@ main (int argc, char ** argv)
 {
   if (argc < 4)
   {
-    std::cerr << "Usage: " << argv[0] << " [bundle.out] [list.txt] [output] {depth_tuning}" << std::endl;
+    std::cerr << "Usage: " << argv[0] << " [bundle.out] [list.txt] [output] {draw_keypoints} {depth_tuning}" << std::endl;
     return -1;
   }
 
-  int scale = 1;
+  bool draw_keypoints = false;
   if (argc == 5)
   {
-    scale = atoi (argv[4]);
+    draw_keypoints = atoi (argv[4]);
+  }
+
+  float scale = 1;
+  if (argc == 6)
+  {
+    scale = atof (argv[5]);
   }
 
   BundleFile file (argv[1]);
@@ -147,8 +193,10 @@ main (int argc, char ** argv)
     size_t replacement = filename.find ("color.calib.jpg");
     std::string filename2 (filename);
     filename2.replace (replacement, 15, "depth.calib.yml");
+    std::string keyFilename (filename);
+    keyFilename.replace (replacement, 15, "color.calib.ks");
     std::cerr << filename2 << std::endl;
-    std::vector<BundlePoint> points = LoadCloud (filename, filename2, cameras[index], scale);
+    std::vector<BundlePoint> points = LoadCloud (filename, filename2, keyFilename, draw_keypoints, cameras[index], scale);
 //    AddCloud (finalPoints, points);
     std::stringstream ss;
     ss << argv[3] << "/" << index << ".ply";
