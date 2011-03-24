@@ -31,7 +31,7 @@ cv::Mat raw_depth_size;
 
 cv::Mat depth_base_and_offset;
 
-GLfloat * depthColors;
+GLubyte * depthColors;
 GLfloat * depthVertices;
 double maxDepth;
 double minDepth;
