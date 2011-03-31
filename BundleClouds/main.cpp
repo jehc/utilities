@@ -30,7 +30,7 @@ std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
       break;
     }
     getline(input, junk);
-    keys.insert(std::make_pair(y, x));
+    keys.insert(std::make_pair((int)y, (int)x));
   }
   input.close();
   return keys;
@@ -42,9 +42,30 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
 
   cv::Mat colorImageDist = cv::imread (colorFilename);
 
-  IplImage * tmp = (IplImage *)cvLoad (depthFilename.c_str());
-  cv::Mat depthMapDist (tmp);
-
+  std::ifstream depthInput (depthFilename.c_str());
+  if (!depthInput)
+  {
+    std::cout << "Could not load file " << depthFilename << std::endl;
+    throw std::exception();
+  }
+  uint32_t rows, cols;
+  if(!depthInput.read((char*)&rows, sizeof(uint32_t)))
+  {
+    std::cout << "Could not read rows in file " << depthFilename << std::endl;
+    throw std::exception();
+  }
+  if (!depthInput.read((char*)&cols, sizeof(uint32_t)))
+  {
+    std::cout << "Could not read cols in file " << depthFilename << std::endl;
+    throw std::exception();
+  }
+  cv::Mat1f depthMapDist (rows, cols);
+  if (!depthInput.read((char*)depthMapDist.data, depthMapDist.rows*depthMapDist.cols*sizeof(float)))
+  {
+    std::cout << "Could not read data in file " << depthFilename << std::endl;
+    throw std::exception();
+  }
+  depthInput.close();
   cv::Mat cameraMatrix (3, 3, CV_32FC1);
   cameraMatrix.at<float> (0, 0) = camera.GetF();
   cameraMatrix.at<float> (0, 1) = 0;
@@ -77,18 +98,21 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
   cv::initUndistortRectifyMap (cameraMatrix, distCoeffs, cv::Mat::eye (3, 3, CV_32FC1), cameraMatrix, depthMapDist.size(), CV_32FC1, map1, map2);
   cv::remap (depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST);
 
-  cvReleaseImage (&tmp);
+  const float baseline = 0.07881;
+  const float offset = 1093.4;
+  const float focal = 523;
 
   for (int j = 0; j < depthMap.rows; ++j)
   {
     for (int i = 0; i < depthMap.cols; ++i)
     {
       float depth = depthMap.at<float> (j, i);
-      if (depth < 0.0001)
+      if (depth == 0)
       {
         continue;
       }
 
+      //depth = baseline*focal*8/(offset - depth);
       cv::Mat p (cv::Vec3f((float)i, (float)depthMap.rows - 1.0 - (float)j, 1));
       p = depth*p;
 
@@ -190,11 +214,11 @@ main (int argc, char ** argv)
       continue;
     }
     std::cerr << filename << std::endl;
-    size_t replacement = filename.find ("color.calib.jpg");
+    size_t replacement = filename.find ("color.jpg");
     std::string filename2 (filename);
-    filename2.replace (replacement, 15, "depth.calib.yml");
+    filename2.replace (replacement, 15, "depth.raw");
     std::string keyFilename (filename);
-    keyFilename.replace (replacement, 15, "color.calib.ks");
+    keyFilename.replace (replacement, 15, "color.ks");
     std::cerr << filename2 << std::endl;
     std::vector<BundlePoint> points = LoadCloud (filename, filename2, keyFilename, draw_keypoints, cameras[index], scale);
 //    AddCloud (finalPoints, points);
