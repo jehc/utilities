@@ -2,7 +2,7 @@
 
 #include <exception>
 
-BundlePoint::BundlePoint (const cv::Vec3f & position, const cv::Vec3b & color)
+BundlePoint::BundlePoint (const cv::Mat & position, const cv::Vec3b & color)
 : position (position), color (color)
 {
 }
@@ -11,7 +11,7 @@ ostream & operator<< (ostream & out, const BundlePoint & point)
 {
   for (int i = 0; i < 3; ++i)
   {
-    out << point.position[i] << " ";
+    out << point.position.at<float>(i,0) << " ";
   }
 
   for (int i = 0; i < 3; ++i)
@@ -26,7 +26,7 @@ istream & operator>> (istream & in, BundlePoint & point)
 {
   for (int i = 0; i < 3; ++i)
   {
-    if (!(in >> point.position[i]))
+    if (!(in >> point.position.at<float>(i,0)))
     {
       throw std::exception();
     }

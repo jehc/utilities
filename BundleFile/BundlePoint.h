@@ -7,16 +7,26 @@
 
 class BundlePoint
 {
-  cv::Vec3f position;
+  cv::Mat position;
   cv::Vec3b color;
   std::vector<BundleView> views;
   friend istream & operator>> (istream &, BundlePoint &);
   friend ostream & operator<< (ostream &, const BundlePoint &);
 public:
-  BundlePoint () { }
-  BundlePoint (const cv::Vec3f &, const cv::Vec3b &);
-  inline cv::Vec3f GetPosition() const { return position; }
+  BundlePoint ():position(cv::Mat(3,1,CV_32FC1)) { }
+  BundlePoint (const cv::Mat &, const cv::Vec3b &);
+  BundlePoint (const BundlePoint & p) { Copy(p); }
+  BundlePoint & operator= (const BundlePoint & p) { Copy(p); return *this; }
+  void Copy (const BundlePoint & p)
+  {
+    position = p.position.clone();
+    color = p.color;
+    views = p.views;
+  }
+  inline cv::Mat GetPosition() const { return position; }
+  inline cv::Vec3b GetColor() const { return color; }
   inline const std::vector<BundleView> & GetViews() const { return views; }
+  inline void SetPosition (const cv::Mat & p) { position = p.clone(); }
 };
 
 #endif
