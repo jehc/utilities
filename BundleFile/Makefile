@@ -1,4 +1,4 @@
-CXXFLAGS = -O3
+CXXFLAGS = -g
 
 libBundleFile.a:	BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
 	ar rcs libBundleFile.a BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
