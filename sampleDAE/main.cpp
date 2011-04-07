@@ -6,6 +6,7 @@
 #include <pcl/point_types.h>
 #include "ply_io.h"
 #include <limits>
+#include <pcl/io/pcd_io.h>
 
 float
 areaOfTriangle (const aiVector3D & v1, const aiVector3D & v2, const aiVector3D & v3)
@@ -58,7 +59,7 @@ main (int argc, char ** argv)
           c3 = colors[0][indices[offset + 2]];
         }
         float area = areaOfTriangle (v1, v2, v3);
-        int numSamples = (int)(1 + 1000*area);
+        int numSamples = (int)(1 + area);
         std::cout << numSamples << std::endl;
         for (int k = 0; k < numSamples; ++k)
         {
@@ -97,6 +98,13 @@ main (int argc, char ** argv)
   
   aiReleaseImport(scene);
   aiDetachAllLogStreams();
-  savePlyFile ("samples.ply", samples);
+  std::string filename (argv[1]);
+  filename.erase (filename.size() - 3, 3);
+  std::stringstream ss_ply, ss_pcd;
+  ss_ply << filename << "ply";
+  ss_pcd << filename << "pcd";
+  std::cout << "Saving to " << ss_ply.str() << " & " << ss_pcd.str() << std::endl;
+  savePlyFile (ss_ply.str(), samples);
+  pcl::io::savePCDFile(ss_pcd.str(), samples);
   return 0;
 }
