@@ -1,11 +1,22 @@
 #include "BundleFile.h"
 
+#include <pcl/point_types.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/surface/mls.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/features/normal_3d_omp.h>
+
 #include <fstream>
 #include <iostream>
 #include <cassert>
 #include <string>
 #include <exception>
 #include <set>
+
+#include "ply.h"
+
+union RgbConverter { float rgb; struct { unsigned char r; unsigned char g; unsigned char b; }; };
 
 std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
 {
@@ -36,9 +47,9 @@ std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
   return keys;
 }
 
-std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, bool colorKeys, const BundleCamera & camera, float scale)
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, bool colorKeys, const BundleCamera & camera, float scale)
 {
-  std::vector<BundlePoint> points;
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr points (new pcl::PointCloud<pcl::PointXYZRGB>());
 
   cv::Mat colorImageDist = cv::imread (colorFilename);
 
@@ -89,7 +100,11 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
 
   cv::undistort (colorImageDist, colorImage, cameraMatrix, distCoeffs);
 
-  std::set<std::pair<int, int> > keys = LoadKeys (keypointFilename);
+  std::set<std::pair<int, int> > keys;
+  if (colorKeys)
+  {
+    keys = LoadKeys (keypointFilename);
+  }
 
   //Linear interpolation; do not want
   //cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
@@ -97,10 +112,6 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
   cv::Mat map1, map2;
   cv::initUndistortRectifyMap (cameraMatrix, distCoeffs, cv::Mat::eye (3, 3, CV_32FC1), cameraMatrix, depthMapDist.size(), CV_32FC1, map1, map2);
   cv::remap (depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST);
-
-  const float baseline = 0.07881;
-  const float offset = 1093.4;
-  const float focal = 523;
 
   for (int j = 0; j < depthMap.rows; ++j)
   {
@@ -123,53 +134,367 @@ std::vector<BundlePoint> LoadCloud (const std::string & colorFilename, const std
       const cv::Mat & t = camera.GetT();
       p = p - t/scale;
       p = R.t() * p;
+      pcl::PointXYZRGB point;
+      point.x = p.at<float>(0,0);
+      point.y = p.at<float>(1,0);
+      point.z = p.at<float>(2,0);
       if (colorKeys && keys.count (std::make_pair(j, i)))
       {
-        BundlePoint point (cv::Vec3f(p.at<float>(0, 0), p.at<float>(1, 0), p.at<float>(2, 0)), cv::Vec3b(0, 0, 255));
-        points.push_back (point);
+        RgbConverter c;
+        c.r = 255;
+        c.g = 0;
+        c.b = 0;
+        point.rgb = c.rgb;
       }
       else
       {
-        BundlePoint point (cv::Vec3f(p.at<float>(0, 0), p.at<float>(1, 0), p.at<float>(2, 0)), colorImage.at<cv::Vec3b> (j, i));
-        points.push_back (point);
+        const cv::Vec3b & color = colorImage.at<cv::Vec3b>(j, i);
+        RgbConverter c;
+        c.r = color[2];
+        c.g = color[1];
+        c.b = color[0];
+        point.rgb = c.rgb;
       }
+      points->push_back(point);
     }
   }
   return points;
 }
 
-void AddCloud (std::vector<BundlePoint> & finalPoints, const std::vector<BundlePoint> & points)
+void
+savePlyFile (const std::string & filename, const pcl::PointCloud<pcl::PointXYZRGB> & pointCloud)
 {
-  finalPoints.reserve (finalPoints.size() + points.size());
-  for (std::vector<BundlePoint>::const_iterator i = points.begin(); i != points.end(); ++i)
+  typedef struct Vertex {
+    float x,y,z;
+    unsigned char r,g,b;
+  } Vertex;
+  static char *elem_names[] = { "vertex" };
+  static PlyProperty vert_props[] = {
+    {"x", Float32, Float32, offsetof(Vertex,x), 0, 0, 0, 0},
+    {"y", Float32, Float32, offsetof(Vertex,y), 0, 0, 0, 0},
+    {"z", Float32, Float32, offsetof(Vertex,z), 0, 0, 0, 0},
+    {"diffuse_red", Uint8, Uint8, offsetof(Vertex,r), 0, 0, 0, 0},
+    {"diffuse_green", Uint8, Uint8, offsetof(Vertex,g), 0, 0, 0, 0},
+    {"diffuse_blue", Uint8, Uint8, offsetof(Vertex,b), 0, 0, 0, 0}
+  };
+  FILE * file = fopen (filename.c_str(), "w");
+  if (!file)
   {
-    finalPoints.push_back (*i);
+    std::cout << "Could not open " << filename << " for write." << std::endl;
+    throw std::exception();
+  }
+  PlyFile * ply = write_ply (file, 1, elem_names, PLY_BINARY_LE);
+  describe_element_ply (ply, "vertex", pointCloud.size());
+  for (int i = 0; i < 6; ++i)
+  {
+    describe_property_ply (ply, &vert_props[i]);
+  }
+  header_complete_ply (ply);
+
+  put_element_setup_ply (ply, "vertex");
+  for (pcl::PointCloud<pcl::PointXYZRGB>::const_iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
+  {
+    Vertex v;
+    v.x = i->x;
+    v.y = i->y;
+    v.z = i->z;
+    RgbConverter c;
+    c.rgb = i->rgb;
+    v.r = c.r;
+    v.g = c.g;
+    v.b = c.b;
+    put_element_ply (ply, (void*)&v);
+  }
+
+  close_ply (ply);
+  free_ply (ply);
+}
+
+void
+savePlyFile (const std::string & filename, const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud)
+{
+  typedef struct Vertex {
+    float x,y,z;
+    float nx,ny,nz;
+    unsigned char r,g,b;
+  } Vertex;
+  static char *elem_names[] = { "vertex" };
+  static PlyProperty vert_props[] = { 
+    {"x", Float32, Float32, offsetof(Vertex,x), 0, 0, 0, 0},
+    {"y", Float32, Float32, offsetof(Vertex,y), 0, 0, 0, 0},
+    {"z", Float32, Float32, offsetof(Vertex,z), 0, 0, 0, 0},
+    {"nx", Float32, Float32, offsetof(Vertex,nx), 0, 0, 0, 0},
+    {"ny", Float32, Float32, offsetof(Vertex,ny), 0, 0, 0, 0},
+    {"nz", Float32, Float32, offsetof(Vertex,nz), 0, 0, 0, 0},
+    {"diffuse_red", Uint8, Uint8, offsetof(Vertex,r), 0, 0, 0, 0},
+    {"diffuse_green", Uint8, Uint8, offsetof(Vertex,g), 0, 0, 0, 0},
+    {"diffuse_blue", Uint8, Uint8, offsetof(Vertex,b), 0, 0, 0, 0}
+  };
+  FILE * file = fopen (filename.c_str(), "w");
+  if (!file)
+  {
+    std::cout << "Could not open " << filename << " for write." << std::endl;
+    throw std::exception();
+  }
+  PlyFile * ply = write_ply (file, 1, elem_names, PLY_BINARY_LE);
+  describe_element_ply (ply, "vertex", pointCloud.size());
+  for (int i = 0; i < 9; ++i)
+  {
+    describe_property_ply (ply, &vert_props[i]);
+  }
+  header_complete_ply (ply);
+
+  put_element_setup_ply (ply, "vertex");
+  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
+  {
+    Vertex v;
+    v.x = i->x;
+    v.y = i->y;
+    v.z = i->z;
+    RgbConverter c;
+    c.rgb = i->rgb;
+    v.r = c.r;
+    v.g = c.g;
+    v.b = c.b;
+    v.nx = i->normal_x;
+    v.ny = i->normal_y;
+    v.nz = i->normal_z;
+    put_element_ply (ply, (void*)&v);
+  }
+
+  close_ply (ply);
+  free_ply (ply);
+}
+
+std::vector<std::vector<float> > 
+generate_histogram(const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud)
+{
+  std::vector<std::vector<float> > histogram (30, std::vector<float> (120));
+  for (int i = 0; i < histogram.size(); ++i)
+  {
+    for (int j = 0; j < histogram[i].size(); ++j)
+    {
+      histogram[i][j] = 0;
+    }
+  }
+  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
+  {
+    float x = i->normal_x;
+    float y = i->normal_y;
+    float z = i->normal_z;
+    float r = sqrt(x*x + y*y + z*z);
+    if (z < 0)
+    {
+      r *= -1;
+    }
+    if (r == 0)
+    {
+      continue;
+    }
+    x /= r;
+    y /= r;
+    z /= r;
+    float phi_temp = atan2(y, x);
+    if (phi_temp < 0) phi_temp += 2*M_PI;
+    int phi = (int)(60*phi_temp/M_PI);
+    int theta = (int)(60*acos(z)/M_PI);
+    if (theta == 30) theta = 29;
+    if (phi == 120) phi = 119;
+    assert (phi < 120 && theta < 30 && theta >= 0 && phi >= 0);
+    histogram[theta][phi]++;
+  }
+  for (int i = 0; i < histogram.size(); ++i)
+  {
+    for (int j = 0; j < histogram[i].size(); ++j)
+    {
+      double theta_0 = M_PI*i/60;
+      double phi_0 = M_PI*j/60;
+      double delta_phi = M_PI/60;
+      double delta_theta = M_PI/60;
+      double normalization = delta_phi*(cos(theta_0) - cos(theta_0 + delta_theta));
+      histogram[i][j] /= normalization;
+    }
+  }
+  return histogram;
+}
+
+void
+compute_axis(const std::vector<std::vector<float> > & histogram, cv::Vec3f & v1, cv::Vec3f &v2, cv::Vec3f & v3)
+{ 
+  float max = 0;
+  size_t theta_max = 0, phi_max = 0;
+  for (size_t i = 0; i < histogram.size(); ++i)
+  {
+    for (size_t j = 0; j < histogram[i].size(); ++j)
+    {
+      if (histogram[i][j] >= max)
+      {
+        max = histogram[i][j];
+        theta_max = i;
+        phi_max = j;
+      }
+    }
+  }
+  v1[0] = sin(M_PI*theta_max/60)*cos(M_PI*phi_max/60);
+  v1[1] = sin(M_PI*theta_max/60)*sin(M_PI*phi_max/60);
+  v1[2] = cos(M_PI*theta_max/60);
+  max = 0;
+  const float slack = 0.06;
+  for (size_t i = 0; i < histogram.size(); ++i)
+  {
+    for (size_t j = 0; j < histogram[i].size(); ++j)
+    {
+      double xtemp = sin(M_PI*i/60)*cos(M_PI*j/60);
+      double ytemp = sin(M_PI*i/60)*sin(M_PI*j/60);
+      double ztemp = cos(M_PI*i/60);
+      double dot = xtemp*v1[0] + ytemp*v1[1] + ztemp*v1[2];
+      if (dot > -slack && dot < slack && histogram[i][j] >= max)
+      {
+        max = histogram[i][j];
+        v2[0] = xtemp;
+        v2[1] = ytemp;
+        v2[2] = ztemp;
+      }
+    }
+  }
+  max = 0;
+  for (size_t i = 0; i < histogram.size(); ++i)
+  {
+    for (size_t j = 0; j < histogram[i].size(); ++j)
+    {
+      double xtemp = sin(M_PI*i/60)*cos(M_PI*j/60);
+      double ytemp = sin(M_PI*i/60)*sin(M_PI*j/60);
+      double ztemp = cos(M_PI*i/60);
+      double dot1 = xtemp*v1[0] + ytemp*v1[1] + ztemp*v1[2];
+      double dot2 = xtemp*v2[0] + ytemp*v2[1] + ztemp*v2[2];
+      if (dot1 > -slack && dot1 < slack && dot2 > -slack && dot2 < slack && histogram[i][j] >= max)
+      {
+        max = histogram[i][j];
+        v3[0] = xtemp;
+        v3[1] = ytemp;
+        v3[2] = ztemp;
+      }
+    }
   }
 }
 
-void SavePly (const std::string & filename, const std::vector<BundlePoint> & points)
+void
+project_onto_basis(pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud, 
+                   const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3)
 {
-  std::ofstream output (filename.c_str());
-
-  output << "ply" << std::endl;
-  output << "format ascii 1.0" << std::endl;
-  output << "element face 0" << std::endl;
-  output << "property list uchar int vertex_indices" << std::endl;
-  output << "element vertex " << points.size() << std::endl;
-  output << "property float x" << std::endl;
-  output << "property float y" << std::endl;
-  output << "property float z" << std::endl;
-  output << "property uchar diffuse_blue" << std::endl;
-  output << "property uchar diffuse_green" << std::endl;
-  output << "property uchar diffuse_red" << std::endl;
-  output << "end_header" << std::endl;
-
-  for (std::vector<BundlePoint>::const_iterator i = points.begin(); i != points.end(); ++i)
+  double projections [6] = {v1[1], -v1[1], v2[1], -v2[1], v3[1], -v3[1]};
+  double maxValue = 0;
+  int maxIndex = 0;
+  for (int i = 0; i < 6; ++i)
   {
-    output << *i << std::endl;
+    if (maxValue <= projections[i])
+    {
+      maxValue = projections[i];
+      maxIndex = i;
+    }
   }
+  double y [3];
+  switch (maxIndex)
+  {
+    case 0:
+      y[0] = 1;
+      y[1] = 0;
+      y[2] = 0;
+      break;
+    case 1:
+      y[0] = -1;
+      y[1] = 0;
+      y[2] = 0;
+      break;
+    case 2:
+      y[0] = 0;
+      y[1] = 1;
+      y[2] = 0;
+      break;
+    case 3:
+      y[0] = 0;
+      y[1] = -1;
+      y[2] = 0;
+      break;
+    case 4:
+      y[0] = 0;
+      y[1] = 0;
+      y[2] = 1;
+      break;
+    case 5:
+      y[0] = 0;
+      y[1] = 0;
+      y[2] = -1;
+      break;
+  }
+  double up[3] = {0, 1, 0};
+  double axis[3] = {y[2]*up[1] - y[1]*up[2], y[0]*up[2] - y[2]*up[0], y[1]*up[0] - y[0]*up[1]};
+  double angle = acos(y[0]*up[0] + y[1]*up[1] + y[2]*up[2]);
+  double R [9] = {1,0,0,0,1,0,0,0,1};
 
-  output.close();
+  R[0] = cos(angle);
+  R[4] = cos(angle);
+  R[8] = cos(angle);
+  
+  double E[9] = {axis[0]*axis[0], axis[0]*axis[1], axis[0]*axis[2],
+                 axis[1]*axis[0], axis[1]*axis[1], axis[1]*axis[2],
+                 axis[2]*axis[0], axis[2]*axis[1], axis[2]*axis[2]};
+  for (int i = 0; i < 9; ++i)
+  { 
+    R[i] += (1 - cos(angle))*E[i];
+  }
+  R[1] -= sin(angle)*axis[2];
+  R[2] += sin(angle)*axis[1];
+  R[3] += sin(angle)*axis[2];
+  R[5] -= sin(angle)*axis[0];
+  R[6] -= sin(angle)*axis[1];
+  R[7] += sin(angle)*axis[0];
+
+  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
+  { 
+    double x, y, z, tempx, tempy, tempz;
+    tempx = v1[0]*i->normal_x + v1[1]*i->normal_y + v1[2]*i->normal_z;
+    tempy = v2[0]*i->normal_x + v2[1]*i->normal_y + v2[2]*i->normal_z;
+    tempz = v3[0]*i->normal_x + v3[1]*i->normal_y + v3[2]*i->normal_z;
+    x = R[0]*tempx + R[3]*tempy + R[6]*tempz;
+    y = R[1]*tempx + R[4]*tempy + R[7]*tempz;
+    z = R[2]*tempx + R[5]*tempy + R[8]*tempz;
+    i->normal_x = x;
+    i->normal_y = y;
+    i->normal_z = z;
+    tempx = v1[0]*i->x + v1[1]*i->y + v1[2]*i->z;
+    tempy = v2[0]*i->x + v2[1]*i->y + v2[2]*i->z;
+    tempz = v3[0]*i->x + v3[1]*i->y + v3[2]*i->z;
+    x = R[0]*tempx + R[3]*tempy + R[6]*tempz;
+    y = R[1]*tempx + R[4]*tempy + R[7]*tempz;
+    z = R[2]*tempx + R[5]*tempy + R[8]*tempz;
+    i->x = x;
+    i->y = y;
+    i->z = z;
+
+  }
+}
+
+void
+print_basis(const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3)
+{
+  fprintf (stderr, "%f %f %f\n", v1[0], v1[1], v1[2]);
+  fprintf (stderr, "%f %f %f\n", v2[0], v2[1], v2[2]);
+  fprintf (stderr, "%f %f %f\n", v3[0], v3[1], v3[2]);
+  double angle1 = 180*acos(v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2])/M_PI;
+  double angle2 = 180*acos(v2[0]*v3[0] + v2[1]*v3[1] + v2[2]*v3[2])/M_PI;
+  double angle3 = 180*acos(v3[0]*v1[0] + v3[1]*v1[1] + v3[2]*v1[2])/M_PI;
+  fprintf (stderr, "%lf %lf %lf\n", angle1, angle2, angle3);
+}
+
+void
+reorient (pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud)
+{
+  std::vector<std::vector<float> > histogram = generate_histogram (pointCloud);
+  cv::Vec3f v1, v2, v3;
+  compute_axis (histogram, v1, v2, v3);
+  project_onto_basis (pointCloud, v1, v2, v3);
+  print_basis (v1, v2, v3);
 }
 
 int
@@ -197,10 +522,13 @@ main (int argc, char ** argv)
   const std::vector<BundleCamera> cameras = file.GetCameras();
   std::ifstream images (argv[2]);
 
-  std::vector<BundlePoint> finalPoints;
+  pcl::PointCloud<pcl::PointXYZRGBNormal> combinedCloud;
+//  pcl::PointCloud<pcl::PointXYZRGB> combinedCloud;
 
   int index = 0;
-  while (images)
+  int count = 0;
+  const int maxCount = 5;
+  while (images)// && count < maxCount)
   {
     std::string filename, line;
     if (!(images >> filename))
@@ -210,6 +538,7 @@ main (int argc, char ** argv)
     getline (images, line);
     if (!cameras[index].IsValid())
     {
+      std::cerr << "Camera " << index << " is invalid." << std::endl;
       ++index;
       continue;
     }
@@ -220,18 +549,47 @@ main (int argc, char ** argv)
     std::string keyFilename (filename);
     keyFilename.replace (replacement, 15, "color.ks");
     std::cerr << filename2 << std::endl;
-    std::vector<BundlePoint> points = LoadCloud (filename, filename2, keyFilename, draw_keypoints, cameras[index], scale);
-//    AddCloud (finalPoints, points);
-    std::stringstream ss;
-    ss << argv[3] << "/" << index << ".ply";
-    SavePly (ss.str(), points);
-    std::cerr << filename << " " << points.size() << "/" << finalPoints.size() << std::endl;
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr points = LoadCloud (filename, filename2, keyFilename, draw_keypoints, cameras[index], scale);
+    pcl::KdTree<pcl::PointXYZRGB>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGB> > ();
+    tree->setInputCloud (points);
+    pcl::PointCloud <pcl::PointXYZRGBNormal> normals;
+    pcl::NormalEstimation<pcl::PointXYZRGB, pcl::PointXYZRGBNormal> normalEstimation;
+    normalEstimation.setInputCloud (points);
+    normalEstimation.setKSearch (20);
+    normalEstimation.setSearchMethod (tree);
+    normalEstimation.compute (normals);
+    pcl::PointCloud<pcl::PointXYZRGB>::const_iterator i;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator j;
+    for (i = points->begin(), j = normals.begin(); i != points->end(); ++i, ++j)
+    {
+      j->x = i->x;
+      j->y = i->y;
+      j->z = i->z;
+      j->rgb = i->rgb;
+    }
+    combinedCloud += normals;
+    //combinedCloud += *points;
+    ++count;
     ++index;
   }
-
+  reorient (combinedCloud);
+  pcl::PointCloud<pcl::PointXYZRGBNormal> reduced;
+  const int desired = 10000000;
+  const float probability = (float)desired/(float)combinedCloud.size();
+  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = combinedCloud.begin(); i != combinedCloud.end(); ++i)
+  {
+    if ((float)rand()/((float)RAND_MAX + 1) < probability)
+    {
+      reduced.push_back (*i);
+    }
+  }
+  std::cerr << reduced.size() << std::endl;
+  std::stringstream ss_ply, ss_pcd;
+  ss_ply << argv[3] << ".ply";
+  ss_pcd << argv[3] << ".pcd";
+  savePlyFile (ss_ply.str(), reduced);
+  pcl::io::savePCDFile (ss_pcd.str(), reduced);
   images.close();
  
-//  SavePly (argv[3], finalPoints);
-
   return 0;
 }
