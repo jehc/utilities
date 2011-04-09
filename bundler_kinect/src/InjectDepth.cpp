@@ -16,15 +16,38 @@ main (int argc, char ** argv)
     std::cerr << "Usage: <executable> sift_file depth_file" << std::endl;
     return -1;
   }
-
+  const float focal = 523;
+  const float baseline = 0.07881;
+  const float offset = 1093.4;
   const float invalid_depth = 0;
 
   int count = 0;
 
   std::ifstream inputSift (argv[1]);
 
-  IplImage * tmp = (IplImage *)cvLoad (argv[2]);
-  cv::Mat depths (tmp);
+  std::ifstream depthInput(argv[2]);
+  if (!depthInput)
+  {
+    std::cout << "Could not find file " << argv[2] << std::endl;
+    throw std::exception();
+  }
+
+  uint32_t rows, cols;
+  if (!depthInput.read((char*)&rows, sizeof(uint32_t)))
+  {
+    std::cout << "Could not read rows in file " << argv[2] << std::endl;
+    throw std::exception();
+  }
+  if(!depthInput.read((char*)&cols, sizeof(uint32_t)))
+  {
+    std::cout << "Could not read cols in file " << argv[2] << std::endl;
+    throw std::exception();
+  }
+  cv::Mat1f depths(rows, cols);
+  if(!depthInput.read((char*)depths.data, depths.rows*depths.cols*sizeof(float)))
+  {
+    std::cout << "Could not read data in file " << argv[2] << std::endl;
+  }
 
   std::vector<std::string> lines;
   std::string firstLine;
@@ -43,19 +66,22 @@ main (int argc, char ** argv)
       tokens.push_back (token);
     }
     std::stringstream ss_new;
+    std::stringstream ss_orig_new;
     for (int i = 0; i < 2; ++i)
     {
       ss_new << tokens[i] << " ";
+      ss_orig_new << tokens[i] << " ";
     }
     float x = atof (tokens[1].c_str());
     float y = atof (tokens[0].c_str());
     int xi = x;
     int yi = y;
-    float depth = depths.at<float>(yi, xi);
+    float depth = depths.at<float>(yi,xi);//baseline*focal*8/(offset - depths.at<float>(yi, xi));
     ss_new << depth << " ";
     for (size_t i = 2; i < tokens.size(); ++i)
     {
       ss_new << tokens [i] << " ";
+      ss_orig_new << tokens[i] << " ";
     }
     if (depth != invalid_depth)
     {    
@@ -71,7 +97,6 @@ main (int argc, char ** argv)
       }
     }
   }
-  cvReleaseImage (&tmp);
   inputSift.close();
   std::ofstream output (argv[1]);
   output << count << " 128" << std::endl;

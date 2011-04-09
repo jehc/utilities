@@ -13,8 +13,8 @@
 #
 
 # Set this variable to your base install path (e.g., /home/foo/bundler)
-# BASE_PATH="TODO"
-BASE_PATH=$(dirname $(which $0));
+BASE_PATH="/home/kmatzen/utilities/bundler_kinect"
+#BASE_PATH=$(dirname $(which $0));
 
 if [ $BASE_PATH == "TODO" ]
 then
@@ -55,7 +55,7 @@ done
 find $IMAGE_DIR -maxdepth 1 | egrep ".jpg$" | sort > list_tmp.txt
 #$EXTRACT_FOCAL list_tmp.txt
 #cp prepare/list.txt .
-cat list_tmp.txt | sed 's/jpg/jpg 0 523/' > list.txt
+cat list_tmp.txt | sed 's/jpg/jpg 0 531/' > list.txt
 
 # Run the ToSift script to generate a list of SIFT commands
 echo "[- Extracting keypoints -]"
@@ -76,6 +76,8 @@ $MATCHKEYS list_keys.txt matches.init.txt
 mkdir bundle
 rm -f options.txt
 
+echo "--init_focal_length 531" >> options.txt
+echo "--fixed_focal_length" >> options.txt
 echo "--match_table matches.init.txt" >> options.txt
 echo "--output bundle.out" >> options.txt
 echo "--output_all bundle_" >> options.txt
