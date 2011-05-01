@@ -6,6 +6,9 @@
 #include <pcl/surface/mls.h>
 #include <pcl/features/normal_3d.h>
 #include <pcl/features/normal_3d_omp.h>
+#include <pcl/filters/radius_outlier_removal.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 #include <fstream>
 #include <iostream>
@@ -123,7 +126,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilen
         continue;
       }
 
-      //depth = baseline*focal*8/(offset - depth);
+      depth = -0.018*depth*depth + 1.0038*depth + 0.005;
       cv::Mat p (cv::Vec3f((float)i, (float)depthMap.rows - 1.0 - (float)j, 1));
       p = depth*p;
 
@@ -522,8 +525,8 @@ main (int argc, char ** argv)
   const std::vector<BundleCamera> cameras = file.GetCameras();
   std::ifstream images (argv[2]);
 
-  pcl::PointCloud<pcl::PointXYZRGBNormal> combinedCloud;
-//  pcl::PointCloud<pcl::PointXYZRGB> combinedCloud;
+//  pcl::PointCloud<pcl::PointXYZRGBNormal> combinedCloud;
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr combinedCloud (new pcl::PointCloud<pcl::PointXYZRGB>());
 
   int index = 0;
   int count = 0;
@@ -544,51 +547,85 @@ main (int argc, char ** argv)
     }
     std::cerr << filename << std::endl;
     size_t replacement = filename.find ("color.jpg");
+    if (replacement == std::string::npos)
+    {
+      ++index;
+      continue;
+    }
     std::string filename2 (filename);
     filename2.replace (replacement, 15, "depth.raw");
     std::string keyFilename (filename);
     keyFilename.replace (replacement, 15, "color.ks");
     std::cerr << filename2 << std::endl;
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr points = LoadCloud (filename, filename2, keyFilename, draw_keypoints, cameras[index], scale);
-    pcl::KdTree<pcl::PointXYZRGB>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGB> > ();
-    tree->setInputCloud (points);
-    pcl::PointCloud <pcl::PointXYZRGBNormal> normals;
-    pcl::NormalEstimation<pcl::PointXYZRGB, pcl::PointXYZRGBNormal> normalEstimation;
-    normalEstimation.setInputCloud (points);
-    normalEstimation.setKSearch (20);
-    normalEstimation.setSearchMethod (tree);
-    normalEstimation.compute (normals);
-    pcl::PointCloud<pcl::PointXYZRGB>::const_iterator i;
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator j;
-    for (i = points->begin(), j = normals.begin(); i != points->end(); ++i, ++j)
-    {
-      j->x = i->x;
-      j->y = i->y;
-      j->z = i->z;
-      j->rgb = i->rgb;
-    }
-    combinedCloud += normals;
-    //combinedCloud += *points;
+    *combinedCloud += *points;
     ++count;
     ++index;
   }
-  reorient (combinedCloud);
-  pcl::PointCloud<pcl::PointXYZRGBNormal> reduced;
+#if 1
+  pcl::PointCloud<pcl::PointXYZRGBNormal> final;
   const int desired = 10000000;
-  const float probability = (float)desired/(float)combinedCloud.size();
-  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = combinedCloud.begin(); i != combinedCloud.end(); ++i)
+  const float probability = (float)desired/(float)combinedCloud->size();
+  for (pcl::PointCloud<pcl::PointXYZRGB>::iterator i = combinedCloud->begin(); i != combinedCloud->end(); ++i)
   {
     if ((float)rand()/((float)RAND_MAX + 1) < probability)
     {
-      reduced.push_back (*i);
+      pcl::PointXYZRGBNormal newPoint;
+      newPoint.x = i->x;
+      newPoint.y = i->y;
+      newPoint.z = i->z;
+      newPoint.rgb = i->rgb;
+      final.push_back (newPoint);
     }
   }
-  std::cerr << reduced.size() << std::endl;
+#else
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr reduced (new pcl::PointCloud<pcl::PointXYZRGB>());
+  std::cerr << combinedCloud->size() << std::endl;
+  pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> outlierRemoval;
+  outlierRemoval.setInputCloud (combinedCloud);
+  outlierRemoval.setNegative (false);
+  outlierRemoval.setStddevMulThresh(2);
+  outlierRemoval.filter (*reduced);
+  std::cerr << reduced->size() << std::endl;
+  pcl::VoxelGrid<pcl::PointXYZRGB> downsampler;
+  downsampler.setInputCloud (reduced);
+  downsampler.setLeafSize (0.01, 0.01, 0.01);
+  downsampler.filter (*reduced);
+  std::cerr << reduced->size() << std::endl;
+  pcl::KdTree<pcl::PointXYZRGB>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGB> > ();
+  tree->setInputCloud (reduced);
+  pcl::PointCloud <pcl::PointNormal>::Ptr normals (new pcl::PointCloud<pcl::PointNormal>());
+  pcl::MovingLeastSquares<pcl::PointXYZRGB, pcl::PointNormal> normalEstimation;
+  normalEstimation.setInputCloud (reduced);
+  normalEstimation.setOutputNormals (normals);
+  normalEstimation.setSearchRadius (0.04);
+  normalEstimation.setSearchMethod (tree);
+  pcl::PointCloud<pcl::PointXYZRGB> cleaned;
+  normalEstimation.reconstruct (cleaned);
+  pcl::PointCloud<pcl::PointXYZRGB>::const_iterator i;
+  pcl::PointCloud<pcl::PointXYZRGB>::const_iterator k;
+  pcl::PointCloud<pcl::PointNormal>::const_iterator j;
+  pcl::PointCloud<pcl::PointXYZRGBNormal> final;
+  for (i = cleaned.begin(), j = normals->begin(), k = reduced->begin(); 
+       i != cleaned.end(); ++i, ++j, ++k)
+  {
+    pcl::PointXYZRGBNormal newPoint;
+    newPoint.normal_x = j->normal_x;
+    newPoint.normal_y = j->normal_y;
+    newPoint.normal_z = j->normal_z;
+    newPoint.rgb = k->rgb;
+    newPoint.x = i->x;
+    newPoint.y = i->y;
+    newPoint.z = i->z;
+    final.push_back (newPoint);
+  }
+  reorient (final);
+#endif
   std::stringstream ss_ply, ss_pcd;
   ss_ply << argv[3] << ".ply";
   ss_pcd << argv[3] << ".pcd";
-  savePlyFile (ss_ply.str(), reduced);
-  pcl::io::savePCDFile (ss_pcd.str(), reduced);
+  savePlyFile (ss_ply.str(), final);
+  pcl::io::savePCDFile (ss_pcd.str(), final);
   images.close();
  
   return 0;
