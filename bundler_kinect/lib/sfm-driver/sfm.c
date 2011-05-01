@@ -52,6 +52,8 @@ typedef struct {
     camera_params_t *init_params;  /* Initial camera parameters */
 
     v3_t *points;
+
+    char *dmask;
 } sfm_global_t;
 
 static void *safe_malloc(int n, char *where)
@@ -302,7 +304,8 @@ void sfm_project2(camera_params_t *init, double f,
 
 void sfm_project_rd(camera_params_t *init, double *K, double *k,
                     double *R, double *dt, double *b, double *p,
-                    int undistort, int explicit_camera_centers)
+                    int undistort, int explicit_camera_centers,
+                    char dmask)
 {
     //fprintf(stderr, "[sfm_project_rd]\n");
     double *t;
@@ -374,7 +377,7 @@ void sfm_project_rd(camera_params_t *init, double *K, double *k,
     }
     //@@@
     //fprintf (stderr, "@@@ b_cam[2]: %f\n", (float)b_cam[2]);
-    p[2] = -b_cam[2];
+    p[2] = dmask ? -b_cam[2] : 0;
 }
 
 static double *global_last_ws = NULL;
@@ -419,7 +422,8 @@ static void sfm_project_point(int j, int i, double *aj, double *bi,
         double Rnew[9];
         rot_update(globs->init_params->R, w, Rnew);
         sfm_project_rd(globs->init_params + j, K, aj + 7,
-                       Rnew, dt, bi, xij, 1, globs->explicit_camera_centers);
+                       Rnew, dt, bi, xij, 1, globs->explicit_camera_centers,
+                       globs->dmask[i * globs->num_cameras + j]);
     }
 }
 
@@ -559,7 +563,7 @@ static void sfm_project_point3(int j, int i, double *aj, double *bi,
     
     sfm_project_rd(globs->init_params + j, K, k, global_last_Rs + 9 * j, 
                    dt, bi, xij, globs->estimate_distortion, 
-                   globs->explicit_camera_centers);
+                   globs->explicit_camera_centers, globs->dmask[i * globs->num_cameras + j]);
 }
 
 static void sfm_project_point3_mot(int j, int i, double *aj, 
@@ -602,6 +606,7 @@ static void sfm_mot_project_point(int j, int i, double *bi,
 
 void run_sfm(int num_pts, int num_cameras, int ncons,
              char *vmask,
+             char *dmask,
              double *projections,
              int est_focal_length,
              int const_focal_length,
@@ -811,6 +816,8 @@ void run_sfm(int num_pts, int num_cameras, int ncons,
 	safe_malloc(9 * num_cameras * sizeof(double), "global_last_ws");
 
     global_params.points = init_pts;
+
+    global_params.dmask = dmask;
 
     for (i = 0; i < num_cameras; i++) {
 	global_last_ws[3 * i + 0] = 0.0;
