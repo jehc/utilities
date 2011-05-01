@@ -115,11 +115,19 @@ void
 depthTransform (const std::vector<std::vector<cv::Mat> > & inputLayers,
                    std::vector<std::vector<cv::Mat> > & outputLayers)
 {
+  outputLayers = std::vector<std::vector<cv::Mat> > (inputLayers.size(), std::vector<cv::Mat> (inputLayers[0].size()));
   for (size_t i = 0; i < inputLayers.size(); ++i)
   {
     for (size_t j = 0; j < inputLayers[i].size(); ++j)
     {
-      inputLayers[i][j].convertTo(outputLayers[i][j], CV_32FC1);
+      outputLayers[i][j] = cv::Mat (inputLayers[i][j].rows, inputLayers[i][j].cols, CV_32FC1);
+      for (int y = 0; y < inputLayers[i][j].rows; ++y)
+      {
+        for (int x = 0; x < inputLayers[i][j].cols; ++x)
+        {
+          outputLayers[i][j].at<float>(y, x) = 1 - inputLayers[i][j].at<uchar>(y, x);
+        }
+      }
     }
   }
 }
@@ -128,10 +136,12 @@ void
 distanceTransform (const std::vector<std::vector<cv::Mat> > & inputLayers, 
                    std::vector<std::vector<cv::Mat> > & outputLayers)
 {
+  outputLayers = std::vector<std::vector<cv::Mat> > (inputLayers.size(), std::vector<cv::Mat> (inputLayers[0].size()));
   for (size_t i = 0; i < inputLayers.size(); ++i)
   {
     for (size_t j = 0; j < inputLayers[i].size(); ++j)
     {
+      outputLayers[i][j] = cv::Mat (inputLayers[i][j].rows, inputLayers[i][j].cols, CV_32FC1);
       distanceTransform (inputLayers[i][j], outputLayers[i][j], CV_DIST_L2, CV_DIST_MASK_PRECISE);
       for (int y = 0; y < outputLayers[i][j].rows; ++y)
       {
@@ -149,14 +159,13 @@ findResponse (const std::vector<std::vector<cv::Mat> > & targetLayers,
               const std::vector<std::vector<cv::Mat> > & sourceLayers)
 {
   assert (targetLayers.size() == sourceLayers.size());
-  assert (targetLayers[0].size() == sourceLayers[0].size());
-  cv::Mat sum (targetLayers[0][0].rows, targetLayers[0][0].cols, CV_32FC1);
+  cv::Mat sum = cv::Mat::zeros(targetLayers[0][0].rows, targetLayers[0][0].cols, CV_32FC1);
   for (size_t i = 0; i < targetLayers.size(); ++i)
   {
-    for (size_t j = 0; j < targetLayers[i].size(); ++j)
+    for (size_t j = 0; j < targetLayers[i].size() && j < sourceLayers[i].size(); ++j)
     {
         cv::Mat convolved (targetLayers[i][j].rows, targetLayers[i][j].cols, CV_32FC1);
-    	cv::filter2D (targetLayers[i][j], convolved, -1, sourceLayers[i][j]);
+    	cv::filter2D (targetLayers[i][j], convolved, -1, sourceLayers[i][j], cv::Point(0, 0));
         sum += convolved;
     }
   }
@@ -178,6 +187,17 @@ findResponse (const std::vector<std::vector<cv::Mat> > & targetLayers,
   return std::make_pair(y, x);
 }
 
+void
+moveSource (pcl::PointCloud<pcl::PointXYZRGBNormal> & points)
+{
+  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = points.begin(); i != points.end(); ++i)
+  {
+    i->x += 20 + 2*(float)rand()/((float)RAND_MAX + 1);
+    i->y += 40 + 2*(float)rand()/((float)RAND_MAX + 1);
+    i->z += -10 + 2*(float)rand()/((float)RAND_MAX + 1);
+  }
+}
+
 int
 main (int argc, char ** argv)
 {
@@ -197,6 +217,7 @@ main (int argc, char ** argv)
     std::cout << "Could not load source PCD " << argv[2] << std::endl;
     return -1;
   }
+  moveSource (target);
   int nVoxels = atoi(argv[3]);
   if(nVoxels == 0)
   {
@@ -221,8 +242,8 @@ main (int argc, char ** argv)
   depthTransform (sourceLayersBinary, sourceLayersFilter);
   std::pair<int, int> response = findResponse (targetLayersFilter, sourceLayersFilter);
   cv::Vec3f position = targetMin;
-  position[0] += lengthOfEdge * response.first;
-  position[2] += lengthOfEdge * response.second;
+  position[0] += lengthOfEdge * response.second;
+  position[2] += lengthOfEdge * response.first;
   std::cout << position[0] << " " << position[1] << " " << position[2] << std::endl;
   for (pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = source.begin(); i != source.end(); ++i)
   {
@@ -233,7 +254,7 @@ main (int argc, char ** argv)
     target.push_back (newPoint);
   }
   std::stringstream ss;
-  ss << argv[3] << ".ply";
+  ss << argv[4] << ".ply";
   savePlyFile (ss.str(), target);
   return 0;
 }
