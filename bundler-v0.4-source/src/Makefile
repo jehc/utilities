@@ -22,7 +22,7 @@ endif
 INCLUDE_PATH=-I../lib/imagelib -I../lib/sfm-driver -I../lib/matrix	\
 	-I../lib/5point -I../lib/sba-1.5 -I../lib/ann_1.1_char/include
 
-LIB_PATH=-L../lib -L../lib/ann_1.1_char/lib
+LIB_PATH=-L/home/kmatzen/local/lib -L../lib -L../lib/ann_1.1_char/lib
 
 CPPFLAGS=$(OPTFLAGS) $(OTHERFLAGS) $(INCLUDE_PATH) $(DEFINES)
 
