@@ -4,6 +4,7 @@
 
 TEMPLATE = app
 TARGET = 
+CONFIG += debug
 DEPENDPATH += .
 
 win32-msvc2008{
@@ -30,7 +31,6 @@ LIBS += -lopencv_highgui -lopencv_imgproc -lopencv_core -lGLEW
 }
 
 QT += opengl
-CONFIG += debug
 
 # Input
 HEADERS += ReprojectDepthWidget.h ShaderException.h
