@@ -560,6 +560,7 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
 
         /* Set up the vmask and projections */
         char *vmask = NULL;
+        char *dmask = NULL;
         double *projections = NULL;
 
         int num_projections = 0;
@@ -568,11 +569,15 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
         }
 
         vmask = new char[num_pts * num_cameras];
+        dmask = new char[num_pts * num_cameras];
         // @@@ This is going from 2 to 3
         projections = new double[3 * num_projections];
 
         for (int i = 0; i < num_pts * num_cameras; i++)
+        {
             vmask[i] = 0;
+            dmask[i] = 0;
+        }
 
         int arr_idx = 0;
         int nz_count = 0;
@@ -584,13 +589,16 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
                     int c = pt_views[i][j].first;
                     int v = added_order[c];
                     int k = pt_views[i][j].second;
+                    float depth = GetKey(v, k).m_depth;
+                    depth = -0.0180*depth*depth + 1.0038*depth + 0.0050;
 
                     vmask[nz_count * num_cameras + c] = 1;
+                    dmask[nz_count * num_cameras + c] = GetKey(v,k).m_depth > 1e-10;
 
                     // @@@ adding the extra projection element
                     projections[3 * arr_idx + 0] = GetKey(v,k).m_x;
                     projections[3 * arr_idx + 1] = GetKey(v,k).m_y;
-                    projections[3 * arr_idx + 2] = m_depth_tuning*GetKey(v, k).m_depth;
+                    projections[3 * arr_idx + 2] = m_depth_tuning*depth;
                     // Depth is correct here
                     //std::cerr << "Depth: " << GetKey(v, k).m_depth << std::endl;
                     arr_idx++;
@@ -610,7 +618,7 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
         bool fixed_focal = m_fixed_focal_length;
         clock_t start = clock();
 
-        run_sfm(nz_count, num_cameras, start_camera, vmask, projections, 
+        run_sfm(nz_count, num_cameras, start_camera, vmask, dmask, projections, 
             fixed_focal ? 0 : 1, 0,
             m_estimate_distortion ? 1 : 0, 1,
             init_camera_params, nz_pts, 
@@ -701,7 +709,7 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
                         sfm_project_rd(&(init_camera_params[i]), K, 
                             init_camera_params[i].k,
                             init_camera_params[i].R, dt, b, pr, 
-                            m_estimate_distortion, true);
+                            m_estimate_distortion, true, false);
 
                         if (m_optimize_for_fisheye) {
                             /* Distort the points */
@@ -837,6 +845,7 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
                     int k = pt_views[idx][j].second;
 
                     vmask[idx * num_cameras + v] = 0;
+                    dmask[idx * num_cameras + v] = 0;
 
                     /* Sanity check */
                     if (GetKey(added_order[v], k).m_extra != idx)
@@ -862,6 +871,7 @@ double BundlerApp::RunSFM(int num_pts, int num_cameras, int start_camera,
         }
 
         delete [] vmask;
+        delete [] dmask;
         delete [] projections;
 
         for (int i = 0; i < num_pts; i++) {

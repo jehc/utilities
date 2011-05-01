@@ -26,27 +26,32 @@ main (int argc, char ** argv)
   std::ifstream inputSift (argv[1]);
 
   std::ifstream depthInput(argv[2]);
+  bool depthAvailable = true;
+  uint32_t rows = 1, cols = 1;
   if (!depthInput)
   {
     std::cout << "Could not find file " << argv[2] << std::endl;
-    throw std::exception();
+    rows = cols = 1;
+    depthAvailable = false;
   }
 
-  uint32_t rows, cols;
-  if (!depthInput.read((char*)&rows, sizeof(uint32_t)))
+  if (depthAvailable && !depthInput.read((char*)&rows, sizeof(uint32_t)))
   {
     std::cout << "Could not read rows in file " << argv[2] << std::endl;
-    throw std::exception();
+    rows = cols = 1;
+    depthAvailable = false;
   }
-  if(!depthInput.read((char*)&cols, sizeof(uint32_t)))
+  if(depthAvailable && !depthInput.read((char*)&cols, sizeof(uint32_t)))
   {
     std::cout << "Could not read cols in file " << argv[2] << std::endl;
-    throw std::exception();
+    rows = cols = 1;
+    depthAvailable = false;
   }
   cv::Mat1f depths(rows, cols);
-  if(!depthInput.read((char*)depths.data, depths.rows*depths.cols*sizeof(float)))
+  if(depthAvailable && !depthInput.read((char*)depths.data, depths.rows*depths.cols*sizeof(float)))
   {
     std::cout << "Could not read data in file " << argv[2] << std::endl;
+    depthAvailable = false;
   }
 
   std::vector<std::string> lines;
@@ -76,14 +81,14 @@ main (int argc, char ** argv)
     float y = atof (tokens[0].c_str());
     int xi = x;
     int yi = y;
-    float depth = depths.at<float>(yi,xi);//baseline*focal*8/(offset - depths.at<float>(yi, xi));
+    float depth = depthAvailable ? depths.at<float>(yi,xi) : 0;
     ss_new << depth << " ";
     for (size_t i = 2; i < tokens.size(); ++i)
     {
       ss_new << tokens [i] << " ";
       ss_orig_new << tokens[i] << " ";
     }
-    if (depth != invalid_depth)
+    if (true)//depth != invalid_depth)
     {    
       lines.push_back (ss_new.str());
       ++count;
@@ -91,7 +96,7 @@ main (int argc, char ** argv)
     for (size_t i = 0; i < 7; ++i)
     {
       getline (inputSift, line);
-      if (depth != invalid_depth)
+      if (true)//depth != invalid_depth)
       {
         lines.push_back (line);
       }
