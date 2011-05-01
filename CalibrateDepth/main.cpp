@@ -4,24 +4,36 @@
 #include <vector>
 
 float
-depthFromYml (const std::vector<std::string> & depthFiles, const BundleView & view, std::vector<cv::Mat> & depthCache, std::vector<bool> & cached)
+depthFromRaw (const std::vector<std::string> & depthFiles, const BundleView & view, std::vector<std::vector<float> > & depthCache, std::vector<bool> & cached)
 {
   const std::string & depthFile = depthFiles [view.GetCamera()];
   if (!cached [view.GetCamera()])
   {
-    IplImage * tmp  = (IplImage *)cvLoad (depthFile.c_str());
-    depthCache [view.GetCamera()] = cv::Mat (tmp);
+    if (depthFile == "")
+    {
+      return 0;
+    }
+    std::ifstream input (depthFile.c_str());
+    if (!input)
+    {
+      std::cerr << "Failed to open file " << depthFile << std::endl;
+      throw std::exception();
+    }
+    std::vector<float> depthBuffer (640*480);
+    if (!input.read((char*)&depthBuffer[0], 640*480*sizeof(float)))
+    {
+      std::cerr << "Failed to read file " << depthFile << std::endl;
+      throw std::exception();
+    }
+    depthCache [view.GetCamera()] = depthBuffer;
     cached [view.GetCamera()] = true;
   }
 
-  const cv::Mat & map = depthCache [view.GetCamera()];
+  const std::vector<float> & map = depthCache [view.GetCamera()];
   
-//  std::cerr << "--- " << 240 - view.GetY() << " " << view.GetX() + 320 << std::endl;
-  assert (view.GetY() <= map.rows/2 && view.GetY() >= -map.rows/2);
-  assert (view.GetX() <= map.cols/2 && view.GetX() >= -map.cols/2);
-  float result = map.at<float>(map.rows/2 - view.GetY(), view.GetX() + map.cols/2);
-
-  return result;
+  int indexI = (int)(view.GetX() + 320);
+  int indexJ = (int)(240 - view.GetY());
+  return map[indexJ*640 + indexI];
 }
 
 float
@@ -50,7 +62,7 @@ main (int argc, char ** argv)
   BundleFile bundle (argv[1]);
 
   std::vector<std::pair<float, float> > dataPoints;
-  std::vector<cv::Mat> depthCache;
+  std::vector<std::vector<float> > depthCache;
   std::vector<bool> cached;
 
   std::string junk;
@@ -64,7 +76,13 @@ main (int argc, char ** argv)
       break;
     }
     getline (list, junk);
-    filename.replace (filename.find ("color.calib.jpg"), 15, "depth.calib.yml");
+    size_t replacement = filename.find ("color.jpg");
+    if (replacement == std::string::npos)
+    {
+      depthFiles.push_back ("");
+      continue;
+    }
+    filename.replace (replacement, 9, "depth.raw");
     depthFiles.push_back (filename);
   }
   list.close();
@@ -87,12 +105,12 @@ main (int argc, char ** argv)
       assert (j->GetCamera() < depthFiles.size());
       assert (j->GetCamera() < cameras.size());
       // Fine the depth according to the uncalibrated data
-      float depthGuess = depthFromYml (depthFiles, *j, depthCache, cached);
-
+      float depthGuess = depthFromRaw (depthFiles, *j, depthCache, cached);
       if (depthGuess == 0)
       {
         continue;
       }
+      depthGuess = -0.018*depthGuess*depthGuess + 1.0038*depthGuess + 0.0050;
       // Get distance from camera to point
       float depthCorrect = depthFromBundle (cameras, *i, *j);
       std::cerr << j->GetCamera() << " " << depthGuess << " " << depthCorrect << std::endl;
