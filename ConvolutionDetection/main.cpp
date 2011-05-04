@@ -32,53 +32,89 @@ binNormals (const pcl::PointCloud<pcl::PointXYZRGBNormal> & points, float length
   for (int i = 0; i < 3; ++i)
   {
     voxels[i] /= lengthOfEdge;
+    voxels[i] += 1;
   }
   normalBins = std::vector<std::vector<std::vector<pcl::PointNormal> > > 
     ((int)ceil(voxels[0]), std::vector<std::vector<pcl::PointNormal> > ((int)ceil(voxels[1]), 
      std::vector<pcl::PointNormal> ((int)ceil(voxels[2]))));
-  std::vector<std::vector<std::vector<int> > > count
-    (normalBins.size(), std::vector<std::vector<int> > (normalBins[0].size(), std::vector<int> (normalBins[0][0].size())));
+  for (int i = 0; i < normalBins.size(); ++i)
+  {
+    for (int j = 0; j < normalBins[i].size(); ++j)
+    {
+      for (int k = 0; k < normalBins[i][j].size(); ++k)
+      {
+        normalBins[i][j][k].normal_x = 0;
+        normalBins[i][j][k].normal_y = 0;
+        normalBins[i][j][k].normal_z = 0;
+      }
+    }
+  }
   for (pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = points.begin(); i != points.end(); ++i)
   {
     int x = (int)((i->x - min[0])/lengthOfEdge);
     int y = (int)((i->y - min[1])/lengthOfEdge);
     int z = (int)((i->z - min[2])/lengthOfEdge);
+//    if (count[x][y][z]) continue;
+    assert (i->x >= min[0]);
+    assert (i->y >= min[1]);
+    assert (i->z >= min[2]);
+    assert (x < normalBins.size() && x >= 0);
+    assert (y < normalBins[x].size() && y >= 0);
+    assert (z < normalBins[x][y].size() && z >= 0);
     normalBins[x][y][z].normal_x += i->normal_x;
     normalBins[x][y][z].normal_y += i->normal_y;
     normalBins[x][y][z].normal_z += i->normal_z;
-    ++count[x][y][z];
-  }
+  } 
   for (size_t i = 0; i < normalBins.size(); ++i)
   {
     for (size_t j = 0; j < normalBins[i].size(); ++j)
     {
       for (size_t k = 0; k < normalBins[i][j].size(); ++k)
       {
-        normalBins[i][j][k].normal_x /= count[i][j][k];
-        normalBins[i][j][k].normal_y /= count[i][j][k];
-        normalBins[i][j][k].normal_z /= count[i][j][k];
+        double norm = sqrt(pow(normalBins[i][j][k].normal_x, 2.0f) + pow(normalBins[i][j][k].normal_y, 2.0f) + pow(normalBins[i][j][k].normal_z, 2.0f));
+        normalBins[i][j][k].normal_x /= norm;
+        normalBins[i][j][k].normal_y /= norm;
+        normalBins[i][j][k].normal_z /= norm;
       }
     }
   }
 }
 
 void
-getQuadrants (const pcl::PointNormal & normal, std::vector<int> & quadrants)
+getRegions (const pcl::PointNormal & normal, std::vector<int> & regions)
 {
-  if (abs(normal.normal_x) < 1e-10 && abs(normal.normal_y) < 1e-10 && abs(normal.normal_z) < 1e-10)
+  const double threshold = 0.9;
+  assert (threshold > 0.71 && threshold < 1.0); 
+  regions.clear();
+  if (normal.normal_x > threshold)
   {
-    quadrants.clear();
-    return;
+    regions.push_back (0);
   }
-  int dominantQuadrant = ((normal.normal_x > 0) << 2)|((normal.normal_y > 0) << 1)|(normal.normal_z > 0);
-  int neighbor1 = dominantQuadrant ^ 0x1;
-  int neighbor2 = dominantQuadrant ^ 0x2;
-  int neighbor3 = dominantQuadrant ^ 0x4;
-  quadrants.clear();
-  quadrants.push_back (dominantQuadrant);
-  quadrants.push_back (neighbor1);
-  quadrants.push_back (neighbor2);
-  quadrants.push_back (neighbor3); 
+  else if (normal.normal_x < -threshold)
+  {
+    regions.push_back (1);
+  }
+  else if (normal.normal_y > threshold)
+  {
+    regions.push_back (2);
+  }
+  else if (normal.normal_y < -threshold)
+  {
+    regions.push_back (3);
+  }
+  else if (normal.normal_z > threshold)
+  {
+    regions.push_back (4);
+  }
+  else if (normal.normal_z < -threshold)
+  {
+    regions.push_back (5);
+  }
+  else
+  {
+    int dominantRegion = ((normal.normal_x > 0) << 2)|((normal.normal_y > 0) << 1)|(normal.normal_z > 0) + 6;
+  regions.push_back (dominantRegion);
+  }
 }
 
 void
@@ -93,7 +129,7 @@ generateLayers (const std::vector<std::vector<std::vector<pcl::PointNormal> > > 
       layers[i][j] = cv::Mat::ones (normalBins[0][0].size(), normalBins.size(), CV_8UC1);
     }
   }
-  std::vector<int> quadrants;
+  std::vector<int> regions;
   for (size_t i = 0; i < normalBins.size(); ++i)
   {
     for (size_t j = 0; j < normalBins[i].size(); ++j)
@@ -101,10 +137,10 @@ generateLayers (const std::vector<std::vector<std::vector<pcl::PointNormal> > > 
       for (size_t k = 0; k < normalBins[i][j].size(); ++k)
       {
         const pcl::PointNormal & normal = normalBins[i][j][k];
-        getQuadrants (normal, quadrants);
-        for (size_t q = 0; q < quadrants.size(); ++q)
+        getRegions (normal, regions);
+        for (size_t q = 0; q < regions.size(); ++q)
         {
-          layers[quadrants[q]][j].at<uchar>(k, i) = 0;
+          layers[regions[q]][j].at<uchar>(k, i) = 0;
         }
       }
     }
@@ -198,6 +234,38 @@ moveSource (pcl::PointCloud<pcl::PointXYZRGBNormal> & points)
   }
 }
 
+void
+saveBinnedNormals (const std::string & filename, const std::vector<std::vector<std::vector<pcl::PointNormal> > > & normalBins)
+{
+  pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
+  for (int i = 0; i < normalBins.size(); ++i)
+  {
+    for (int j = 0; j < normalBins[i].size(); ++j)
+    {
+      for (int k = 0; k < normalBins[i][j].size(); ++k)
+      {
+        pcl::PointXYZRGBNormal point;
+        point.x = i;
+        point.y = j;
+        point.z = k;
+        RgbConverter c;
+        c.r = (uchar)(127*normalBins[i][j][k].normal_x + 128);
+        c.g = (uchar)(127*normalBins[i][j][k].normal_y + 128);
+        c.b = (uchar)(127*normalBins[i][j][k].normal_z + 128);
+        point.rgb = c.rgb;
+        point.normal_x = normalBins[i][j][k].normal_x;
+        point.normal_y = normalBins[i][j][k].normal_y;
+        point.normal_z = normalBins[i][j][k].normal_z;
+        if (fabs(point.normal_x) < 1.1 && fabs(point.normal_y) < 1.1 && fabs(point.normal_z) < 1.1)
+        {
+          cloud.push_back (point);
+        }
+      }
+    }
+  }
+  savePlyFile (filename, cloud);
+}
+
 int
 main (int argc, char ** argv)
 {
@@ -217,7 +285,11 @@ main (int argc, char ** argv)
     std::cout << "Could not load source PCD " << argv[2] << std::endl;
     return -1;
   }
+
+#if 0
   moveSource (target);
+#endif
+
   int nVoxels = atoi(argv[3]);
   if(nVoxels == 0)
   {
@@ -234,6 +306,12 @@ main (int argc, char ** argv)
   std::vector<std::vector<std::vector<pcl::PointNormal> > > sourceNormalBins, targetNormalBins; 
   binNormals (source, lengthOfEdge, sourceMin, sourceMax, sourceNormalBins);
   binNormals (target, lengthOfEdge, targetMin, targetMax, targetNormalBins);
+
+#if 1
+  saveBinnedNormals ("source.ply", sourceNormalBins);
+  saveBinnedNormals ("target.ply", targetNormalBins);
+#endif
+
   std::vector<std::vector<cv::Mat> > sourceLayersBinary, targetLayersBinary;
   std::vector<std::vector<cv::Mat> > sourceLayersFilter, targetLayersFilter;
   generateLayers (sourceNormalBins, sourceLayersBinary);
