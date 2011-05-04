@@ -1,5 +1,5 @@
 INCLUDE=-I/home/kmatzen/local/include/pcl-2.0 -I/home/kmatzen/local/include/eigen3
-LIBS=-L/home/kmatzen/local/lib -lassimp -lply -lpcl_io -lboost_filesystem
+LIBS=-L/home/kmatzen/local/lib -lassimp -lply -lpcl_io -lpcl_kdtree -lboost_filesystem
 
 all:	sampleDAE
 
