@@ -129,6 +129,121 @@ getRegions (const pcl::PointNormal & normal, std::vector<int> & regions)
 #endif
     regions.push_back (dominantRegion);
   }
+
+  switch (regions[0])
+  {
+    case 0:
+      regions.push_back (7);
+      regions.push_back (9);
+      regions.push_back (11);
+      regions.push_back (13);
+      break;
+    case 1:
+      regions.push_back (6);
+      regions.push_back (8);
+      regions.push_back (10);
+      regions.push_back (12);
+      break;
+    case 2:
+      regions.push_back (8);
+      regions.push_back (9);
+      regions.push_back (12);
+      regions.push_back (13);
+      break;
+    case 3:
+      regions.push_back (6);
+      regions.push_back (7);
+      regions.push_back (10);
+      regions.push_back (11);
+      break;
+    case 4:
+      regions.push_back (10);
+      regions.push_back (11);
+      regions.push_back (12);
+      regions.push_back (13);
+      break;
+    case 5:
+      regions.push_back (6);
+      regions.push_back (7);
+      regions.push_back (8);
+      regions.push_back (9);
+      break;
+    case 6:
+      regions.push_back (1);
+      regions.push_back (3);
+      regions.push_back (5);
+
+      regions.push_back (7);
+      regions.push_back (8);
+      regions.push_back (10);
+      break;
+    case 7:
+      regions.push_back (0);
+      regions.push_back (3);
+      regions.push_back (5);
+
+      regions.push_back (6);
+      regions.push_back (9);
+      regions.push_back (11);
+      break;
+    case 8:
+      regions.push_back (1);
+      regions.push_back (2);
+      regions.push_back (5);
+
+      regions.push_back (9);
+      regions.push_back (6);
+      regions.push_back (12);
+      break;
+    case 9:
+      regions.push_back (0);
+      regions.push_back (2);
+      regions.push_back (5);
+
+      regions.push_back (8);
+      regions.push_back (7);
+      regions.push_back (13);
+      break;
+    case 10:
+      regions.push_back (1);
+      regions.push_back (3);
+      regions.push_back (4);
+
+      regions.push_back (11);
+      regions.push_back (12);
+      regions.push_back (6);
+      break;
+    case 11:
+      regions.push_back (0);
+      regions.push_back (3);
+      regions.push_back (4);
+
+      regions.push_back (10);
+      regions.push_back (13);
+      regions.push_back (7);
+      break;
+    case 12:
+      regions.push_back (1);
+      regions.push_back (2);
+      regions.push_back (4);
+
+      regions.push_back (13);
+      regions.push_back (10);
+      regions.push_back (8);
+      break;
+    case 13:
+      regions.push_back (0);
+      regions.push_back (2);
+      regions.push_back (4);
+
+      regions.push_back (12);
+      regions.push_back (11);
+      regions.push_back (9);
+      break;
+    default:
+      assert (0);
+      break;
+  }
 }
 
 pcl::PointNormal
@@ -228,7 +343,7 @@ generateLayers (const std::vector<std::vector<std::vector<pcl::PointNormal> > > 
         getRegions (normal, regions);
         for (size_t q = 0; q < regions.size(); ++q)
         {
-          layers[regions[q]][j].at<uchar>(i, k) = 1;
+          layers[regions[q]][j].at<uchar>(i, k) = (q == 0) ? 255 : (uchar)(255.0/(regions.size() - 1));
         }
       }
     }
@@ -333,9 +448,9 @@ saveBinnedNormals (const std::string & filename, const std::vector<std::vector<s
       for (int k = 0; k < normalBins[i][j].size(); ++k)
       {
         pcl::PointXYZRGBNormal point;
-        point.x = i;
-        point.y = j;
-        point.z = k;
+        point.x = 2*i;
+        point.y = 2*j;
+        point.z = 2*k;
         RgbConverter c;
         c.r = (uchar)(127*normalBins[i][j][k].normal_x + 128);
         c.g = (uchar)(127*normalBins[i][j][k].normal_y + 128);
@@ -368,14 +483,14 @@ void saveLayers (const std::string & filename, const std::vector<std::vector<cv:
           if (layers[i][j].at<uchar>(k, l))
           {
             pcl::PointXYZRGBNormal point;
-            point.x = k;
-            point.y = j;
-            point.z = l;
+            point.x = 2*k;
+            point.y = 2*j;
+            point.z = 2*l;
             RgbConverter c;
             pcl::PointNormal normal = region2Normal (i);
-            point.normal_x = normal.normal_x;
-            point.normal_y = normal.normal_y;
-            point.normal_z = normal.normal_z;
+            point.normal_x = normal.normal_x*layers[i][j].at<uchar>(k, l)/255;
+            point.normal_y = normal.normal_y*layers[i][j].at<uchar>(k, l)/255;
+            point.normal_z = normal.normal_z*layers[i][j].at<uchar>(k, l)/255;
             c.r = (uchar)(127*point.normal_x + 128);
             c.g = (uchar)(127*point.normal_y + 128);
             c.b = (uchar)(127*point.normal_z + 128);
