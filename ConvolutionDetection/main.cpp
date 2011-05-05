@@ -86,6 +86,15 @@ getRegions (const pcl::PointNormal & normal, std::vector<int> & regions)
   const double threshold = 0.9;
   assert (threshold > 0.71 && threshold < 1.0); 
   regions.clear();
+
+#if 0
+  std::cerr << normal.normal_x << " " << normal.normal_y << " " << normal.normal_z << std::endl;
+#endif
+
+  if (normal.normal_x != normal.normal_x || normal.normal_y != normal.normal_y || normal.normal_z != normal.normal_z)
+  {
+    return;
+  }
   if (normal.normal_x > threshold)
   {
     regions.push_back (0);
@@ -112,21 +121,100 @@ getRegions (const pcl::PointNormal & normal, std::vector<int> & regions)
   }
   else
   {
-    int dominantRegion = ((normal.normal_x > 0) << 2)|((normal.normal_y > 0) << 1)|(normal.normal_z > 0) + 6;
-  regions.push_back (dominantRegion);
+    int dominantRegion = ((((normal.normal_z > 0) ? 1 : 0) << 2)|(((normal.normal_y > 0) ? 1 : 0) << 1)|((normal.normal_x > 0) ? 1 : 0)) + 6;
+#if 0
+    assert (((((normal.normal_z > 0) ? 1 : 0) << 2)|(((normal.normal_y > 0) ? 1 : 0) << 1)|((normal.normal_x > 0) ? 1 : 0)) + 6 == dominantRegion);
+    std::cerr << ((((normal.normal_z > 0) ? 1 : 0) << 2)|(((normal.normal_y > 0) ? 1 : 0) << 1)|((normal.normal_x > 0) ? 1 : 0)) + 6 << " " << dominantRegion << std::endl;
+    std::cerr << dominantRegion - 6 << " " << (((normal.normal_z > 0) ? 1 : 0) << 2) << " " << normal.normal_z << " " << (((normal.normal_y > 0) ? 1 : 0) << 1) << " " << normal.normal_y << " " << ((normal.normal_x > 0) ? 1 : 0) << " " << normal.normal_x << std::endl;
+#endif
+    regions.push_back (dominantRegion);
   }
+}
+
+pcl::PointNormal
+region2Normal (int region)
+{
+  pcl::PointNormal normal;
+  normal.normal_x = 0;
+  normal.normal_y = 0; 
+  normal.normal_z = 0;
+  switch (region)
+  {
+    case 0:
+      normal.normal_x = 1;
+      break;
+    case 1:
+      normal.normal_x = -1;
+      break;
+    case 2:
+      normal.normal_y = 1;
+      break;
+    case 3:
+      normal.normal_y = -1;
+      break;
+    case 4:
+      normal.normal_z = 1;
+      break;
+    case 5:
+      normal.normal_z = -1;
+      break;
+    case 6:
+      normal.normal_x = -0.577350269;
+      normal.normal_y = -0.577350269;
+      normal.normal_z = -0.577350269;
+      break;
+    case 7:
+      normal.normal_x = 0.577350269;
+      normal.normal_y = -0.577350269;
+      normal.normal_z = -0.577350269;
+      break;
+    case 8:
+      normal.normal_x = -0.577350269;
+      normal.normal_y = 0.577350269;
+      normal.normal_z = -0.577350269;
+      break;
+    case 9:
+      normal.normal_x = 0.577350269;
+      normal.normal_y = 0.577350269;
+      normal.normal_z = -0.577350269;
+      break;
+    case 10:
+      normal.normal_x = -0.577350269;
+      normal.normal_y = -0.577350269;
+      normal.normal_z = 0.577350269;
+      break;
+    case 11:
+      normal.normal_x = 0.577350269;
+      normal.normal_y = -0.577350269;
+      normal.normal_z = 0.577350269;
+      break;
+    case 12:
+      normal.normal_x = -0.577350269;
+      normal.normal_y = 0.577350269;
+      normal.normal_z = 0.577350269;
+      break;
+    case 13:
+      normal.normal_x = 0.577350269;
+      normal.normal_y = 0.577350269;
+      normal.normal_z = 0.577350269;
+      break;
+    default:
+      assert (0);
+      break;
+  }
+  return normal;
 }
 
 void
 generateLayers (const std::vector<std::vector<std::vector<pcl::PointNormal> > > & normalBins, 
                std::vector<std::vector<cv::Mat> > & layers)
 {
-  layers = std::vector<std::vector<cv::Mat> > (8, std::vector<cv::Mat> (normalBins[0].size()));
-  for (size_t i = 0; i < 8; ++i)
+  layers = std::vector<std::vector<cv::Mat> > (14, std::vector<cv::Mat> (normalBins[0].size()));
+  for (size_t i = 0; i < layers.size(); ++i)
   {
-    for (size_t j = 0; j < normalBins[0].size(); ++j)
+    for (size_t j = 0; j < layers[i].size(); ++j)
     {
-      layers[i][j] = cv::Mat::ones (normalBins[0][0].size(), normalBins.size(), CV_8UC1);
+      layers[i][j] = cv::Mat::zeros (normalBins.size(), normalBins[0][0].size(), CV_8UC1);
     }
   }
   std::vector<int> regions;
@@ -140,7 +228,7 @@ generateLayers (const std::vector<std::vector<std::vector<pcl::PointNormal> > > 
         getRegions (normal, regions);
         for (size_t q = 0; q < regions.size(); ++q)
         {
-          layers[regions[q]][j].at<uchar>(k, i) = 0;
+          layers[regions[q]][j].at<uchar>(i, k) = 1;
         }
       }
     }
@@ -256,9 +344,44 @@ saveBinnedNormals (const std::string & filename, const std::vector<std::vector<s
         point.normal_x = normalBins[i][j][k].normal_x;
         point.normal_y = normalBins[i][j][k].normal_y;
         point.normal_z = normalBins[i][j][k].normal_z;
-        if (fabs(point.normal_x) < 1.1 && fabs(point.normal_y) < 1.1 && fabs(point.normal_z) < 1.1)
+        if (point.normal_x == point.normal_x && point.normal_y == point.normal_y && point.normal_z == point.normal_z)
         {
           cloud.push_back (point);
+        }
+      }
+    }
+  }
+  savePlyFile (filename, cloud);
+}
+
+void saveLayers (const std::string & filename, const std::vector<std::vector<cv::Mat> > & layers)
+{
+  pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
+  for (int i = 0; i < layers.size(); ++i)
+  {
+    for (int j = 0; j < layers[i].size(); ++j)
+    {
+      for (int k = 0; k < layers[i][j].rows; ++k)
+      {
+        for (int l = 0; l < layers[i][j].cols; ++l)
+        {
+          if (layers[i][j].at<uchar>(k, l))
+          {
+            pcl::PointXYZRGBNormal point;
+            point.x = k;
+            point.y = j;
+            point.z = l;
+            RgbConverter c;
+            pcl::PointNormal normal = region2Normal (i);
+            point.normal_x = normal.normal_x;
+            point.normal_y = normal.normal_y;
+            point.normal_z = normal.normal_z;
+            c.r = (uchar)(127*point.normal_x + 128);
+            c.g = (uchar)(127*point.normal_y + 128);
+            c.b = (uchar)(127*point.normal_z + 128);
+            point.rgb = c.rgb;
+            cloud.push_back (point);
+          }
         }
       }
     }
@@ -316,6 +439,12 @@ main (int argc, char ** argv)
   std::vector<std::vector<cv::Mat> > sourceLayersFilter, targetLayersFilter;
   generateLayers (sourceNormalBins, sourceLayersBinary);
   generateLayers (targetNormalBins, targetLayersBinary);
+
+#if 1
+  saveLayers ("sourceLayers.ply", sourceLayersBinary);
+  saveLayers ("targetLayers.ply", targetLayersBinary);
+#endif
+
   distanceTransform (targetLayersBinary, targetLayersFilter);
   depthTransform (sourceLayersBinary, sourceLayersFilter);
   std::pair<int, int> response = findResponse (targetLayersFilter, sourceLayersFilter);
