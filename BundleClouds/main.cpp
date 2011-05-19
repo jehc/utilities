@@ -10,6 +10,9 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 
+#include <sys/time.h>
+#include <getopt.h>
+
 #include <fstream>
 #include <iostream>
 #include <cassert>
@@ -17,9 +20,7 @@
 #include <exception>
 #include <set>
 
-#include "ply.h"
-
-union RgbConverter { float rgb; struct { unsigned char r; unsigned char g; unsigned char b; }; };
+#include "ply_io.h"
 
 std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
 {
@@ -27,8 +28,7 @@ std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
   std::set<std::pair<int, int> > keys;
   if (!input)
   {
-    std::cerr << "Keypoint file " << keypointFilename << " not found" << std::endl;
-    throw std::exception();
+    return keys;
   }
   std::string junk;
   getline (input, junk);
@@ -50,9 +50,9 @@ std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
   return keys;
 }
 
-pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, bool colorKeys, const BundleCamera & camera, float scale)
+pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, const BundleCamera & camera, float scale)
 {
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr points (new pcl::PointCloud<pcl::PointXYZRGB>());
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points (new pcl::PointCloud<pcl::PointXYZRGBNormal>());
 
   cv::Mat colorImageDist = cv::imread (colorFilename);
 
@@ -94,7 +94,6 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilen
   cv::Mat distCoeffs (5, 1, CV_32FC1);
   distCoeffs.at<float> (0, 0) = camera.GetK1();
   distCoeffs.at<float> (1, 0) = camera.GetK2();
-  std::cerr << camera.GetK1() << " " << camera.GetK2() << std::endl;
   distCoeffs.at<float> (2, 0) = 0;
   distCoeffs.at<float> (3, 0) = 0;
   distCoeffs.at<float> (4, 0) = 0;
@@ -103,11 +102,7 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilen
 
   cv::undistort (colorImageDist, colorImage, cameraMatrix, distCoeffs);
 
-  std::set<std::pair<int, int> > keys;
-  if (colorKeys)
-  {
-    keys = LoadKeys (keypointFilename);
-  }
+  std::set<std::pair<int, int> > keys = LoadKeys (keypointFilename);
 
   //Linear interpolation; do not want
   //cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
@@ -137,11 +132,19 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilen
       const cv::Mat & t = camera.GetT();
       p = p - t/scale;
       p = R.t() * p;
-      pcl::PointXYZRGB point;
+
+      cv::Mat diff = depth*(-R.t()*t/scale - p);
+
+      pcl::PointXYZRGBNormal point;
       point.x = p.at<float>(0,0);
       point.y = p.at<float>(1,0);
       point.z = p.at<float>(2,0);
-      if (colorKeys && keys.count (std::make_pair(j, i)))
+
+      point.normal_x = diff.at<float>(0, 0);
+      point.normal_y = diff.at<float>(1, 0);
+      point.normal_z = diff.at<float>(2, 0);
+
+      if (keys.count (std::make_pair(j, i)))
       {
         RgbConverter c;
         c.r = 255;
@@ -162,111 +165,6 @@ pcl::PointCloud<pcl::PointXYZRGB>::Ptr LoadCloud (const std::string & colorFilen
     }
   }
   return points;
-}
-
-void
-savePlyFile (const std::string & filename, const pcl::PointCloud<pcl::PointXYZRGB> & pointCloud)
-{
-  typedef struct Vertex {
-    float x,y,z;
-    unsigned char r,g,b;
-  } Vertex;
-  static char *elem_names[] = { "vertex" };
-  static PlyProperty vert_props[] = {
-    {"x", Float32, Float32, offsetof(Vertex,x), 0, 0, 0, 0},
-    {"y", Float32, Float32, offsetof(Vertex,y), 0, 0, 0, 0},
-    {"z", Float32, Float32, offsetof(Vertex,z), 0, 0, 0, 0},
-    {"diffuse_red", Uint8, Uint8, offsetof(Vertex,r), 0, 0, 0, 0},
-    {"diffuse_green", Uint8, Uint8, offsetof(Vertex,g), 0, 0, 0, 0},
-    {"diffuse_blue", Uint8, Uint8, offsetof(Vertex,b), 0, 0, 0, 0}
-  };
-  FILE * file = fopen (filename.c_str(), "w");
-  if (!file)
-  {
-    std::cout << "Could not open " << filename << " for write." << std::endl;
-    throw std::exception();
-  }
-  PlyFile * ply = write_ply (file, 1, elem_names, PLY_BINARY_LE);
-  describe_element_ply (ply, "vertex", pointCloud.size());
-  for (int i = 0; i < 6; ++i)
-  {
-    describe_property_ply (ply, &vert_props[i]);
-  }
-  header_complete_ply (ply);
-
-  put_element_setup_ply (ply, "vertex");
-  for (pcl::PointCloud<pcl::PointXYZRGB>::const_iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
-  {
-    Vertex v;
-    v.x = i->x;
-    v.y = i->y;
-    v.z = i->z;
-    RgbConverter c;
-    c.rgb = i->rgb;
-    v.r = c.r;
-    v.g = c.g;
-    v.b = c.b;
-    put_element_ply (ply, (void*)&v);
-  }
-
-  close_ply (ply);
-  free_ply (ply);
-}
-
-void
-savePlyFile (const std::string & filename, const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud)
-{
-  typedef struct Vertex {
-    float x,y,z;
-    float nx,ny,nz;
-    unsigned char r,g,b;
-  } Vertex;
-  static char *elem_names[] = { "vertex" };
-  static PlyProperty vert_props[] = { 
-    {"x", Float32, Float32, offsetof(Vertex,x), 0, 0, 0, 0},
-    {"y", Float32, Float32, offsetof(Vertex,y), 0, 0, 0, 0},
-    {"z", Float32, Float32, offsetof(Vertex,z), 0, 0, 0, 0},
-    {"nx", Float32, Float32, offsetof(Vertex,nx), 0, 0, 0, 0},
-    {"ny", Float32, Float32, offsetof(Vertex,ny), 0, 0, 0, 0},
-    {"nz", Float32, Float32, offsetof(Vertex,nz), 0, 0, 0, 0},
-    {"diffuse_red", Uint8, Uint8, offsetof(Vertex,r), 0, 0, 0, 0},
-    {"diffuse_green", Uint8, Uint8, offsetof(Vertex,g), 0, 0, 0, 0},
-    {"diffuse_blue", Uint8, Uint8, offsetof(Vertex,b), 0, 0, 0, 0}
-  };
-  FILE * file = fopen (filename.c_str(), "w");
-  if (!file)
-  {
-    std::cout << "Could not open " << filename << " for write." << std::endl;
-    throw std::exception();
-  }
-  PlyFile * ply = write_ply (file, 1, elem_names, PLY_BINARY_LE);
-  describe_element_ply (ply, "vertex", pointCloud.size());
-  for (int i = 0; i < 9; ++i)
-  {
-    describe_property_ply (ply, &vert_props[i]);
-  }
-  header_complete_ply (ply);
-
-  put_element_setup_ply (ply, "vertex");
-  for (pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
-  {
-    Vertex v;
-    v.x = i->x;
-    v.y = i->y;
-    v.z = i->z;
-    RgbConverter c;
-    c.rgb = i->rgb;
-    v.r = c.r;
-    v.g = c.g;
-    v.b = c.b;
-    v.nx = i->normal_x;
-    v.ny = i->normal_y;
-    v.nz = i->normal_z;
-    put_element_ply (ply, (void*)&v);
-  }
-
-  close_ply (ply);
-  free_ply (ply);
 }
 
 std::vector<std::vector<float> > 
@@ -341,6 +239,11 @@ compute_axis(const std::vector<std::vector<float> > & histogram, cv::Vec3f & v1,
   v1[0] = sin(M_PI*theta_max/60)*cos(M_PI*phi_max/60);
   v1[1] = sin(M_PI*theta_max/60)*sin(M_PI*phi_max/60);
   v1[2] = cos(M_PI*theta_max/60);
+  double norm = sqrt(v1[0]*v1[0] + v1[1]*v1[1] + v1[2]*v1[2]);
+  for (int i = 0; i < 3; ++i)
+  {
+    v1[i] /= norm;
+  }
   max = 0;
   const float slack = 0.06;
   for (size_t i = 0; i < histogram.size(); ++i)
@@ -350,6 +253,11 @@ compute_axis(const std::vector<std::vector<float> > & histogram, cv::Vec3f & v1,
       double xtemp = sin(M_PI*i/60)*cos(M_PI*j/60);
       double ytemp = sin(M_PI*i/60)*sin(M_PI*j/60);
       double ztemp = cos(M_PI*i/60);
+      double norm = sqrt(xtemp*xtemp + ytemp*ytemp + ztemp*ztemp);
+      xtemp /= norm;
+      ytemp /= norm;
+      ztemp /= norm;
+
       double dot = xtemp*v1[0] + ytemp*v1[1] + ztemp*v1[2];
       if (dot > -slack && dot < slack && histogram[i][j] >= max)
       {
@@ -368,6 +276,11 @@ compute_axis(const std::vector<std::vector<float> > & histogram, cv::Vec3f & v1,
       double xtemp = sin(M_PI*i/60)*cos(M_PI*j/60);
       double ytemp = sin(M_PI*i/60)*sin(M_PI*j/60);
       double ztemp = cos(M_PI*i/60);
+      double norm = sqrt(xtemp*xtemp + ytemp*ytemp + ztemp*ztemp);
+      xtemp /= norm;
+      ytemp /= norm;
+      ztemp /= norm;
+
       double dot1 = xtemp*v1[0] + ytemp*v1[1] + ztemp*v1[2];
       double dot2 = xtemp*v2[0] + ytemp*v2[1] + ztemp*v2[2];
       if (dot1 > -slack && dot1 < slack && dot2 > -slack && dot2 < slack && histogram[i][j] >= max)
@@ -435,6 +348,7 @@ project_onto_basis(pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
   double angle = acos(y[0]*up[0] + y[1]*up[1] + y[2]*up[2]);
   double R [9] = {1,0,0,0,1,0,0,0,1};
 
+#if 1
   R[0] = cos(angle);
   R[4] = cos(angle);
   R[8] = cos(angle);
@@ -452,6 +366,7 @@ project_onto_basis(pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
   R[5] -= sin(angle)*axis[0];
   R[6] -= sin(angle)*axis[1];
   R[7] += sin(angle)*axis[0];
+#endif
 
   for (pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin(); i != pointCloud.end(); ++i)
   { 
@@ -491,142 +406,483 @@ print_basis(const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3)
 }
 
 void
+saveHistogram (const std::string & filename, const std::vector<std::vector<float> > & histogram,
+               const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3)
+{
+  pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
+  float max = 0;
+  for (size_t i = 0; i < histogram.size(); ++i)
+  {
+    for (size_t j = 0; j < histogram[i].size(); ++j)
+    {
+      if (histogram[i][j] > max)
+      {
+        max = histogram[i][j];
+      }
+    }
+  }
+  for (size_t i = 0; i < histogram.size(); ++i)
+  {
+    for (size_t j = 0; j < histogram[i].size(); ++j)
+    {
+      pcl::PointXYZRGBNormal point;
+      point.x = sin(M_PI*i/60)*cos(M_PI*j/60);
+      point.y = sin(M_PI*i/60)*sin(M_PI*j/60);
+      point.z = cos(M_PI*i/60);
+      double norm = sqrt(point.x*point.x + point.y*point.y + point.z*point.z);
+      point.x /= norm;
+      point.y /= norm;
+      point.z /= norm;
+      point.normal_x = point.x * histogram[i][j]/max;
+      point.normal_y = point.y * histogram[i][j]/max;
+      point.normal_z = point.z * histogram[i][j]/max;
+      RgbConverter c;
+      c.g = (uchar)(255*histogram[i][j]/max);
+      c.r = 0;
+      c.b = 0;
+      point.rgb = c.rgb;
+      cloud.push_back (point);
+    }
+  }
+  project_onto_basis (cloud, v1, v2, v3);
+  savePlyFile (filename, cloud);
+}
+
+void
 reorient (pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud)
 {
   std::vector<std::vector<float> > histogram = generate_histogram (pointCloud);
   cv::Vec3f v1, v2, v3;
   compute_axis (histogram, v1, v2, v3);
   project_onto_basis (pointCloud, v1, v2, v3);
+#if 0
   print_basis (v1, v2, v3);
+#endif
+  saveHistogram ("histogram.ply", histogram, v1, v2, v3);
 }
+
+struct Options
+{
+  std::string bundleFile;
+  std::string listFile;
+  std::string output;
+  bool drawKeypoints;
+  std::string inputCloud;
+  double depthTuning;
+  double stdThresh;
+  double voxelSize;
+  double mlsRadius;
+  bool reprocess;
+  bool postProcess;
+
+  void
+  help () const
+  {
+    std::cout << "  --bundle [string]" << std::endl;
+    std::cout << "  --list [string]" << std::endl;
+    std::cout << "  --output [string]" << std::endl;
+    std::cout << "  --keypoints" << std::endl;
+    std::cout << "  --depth_tuning [double]" << std::endl;
+    std::cout << "  --input_cloud [string]" << std::endl;
+    std::cout << "  --postprocess" << std::endl;
+    std::cout << "  --reprocess" << std::endl;
+    std::cout << "  --std_thresh [double]" << std::endl;
+    std::cout << "  --voxel_size [double]" << std::endl;
+    std::cout << "  --mls_radius [double]" << std::endl;
+    std::cout << "  --help" << std::endl;
+    exit (1);
+  }
+
+  Options (int argc, char ** argv)
+  {
+    int c;
+    int indexptr;
+
+    struct option longopts [12] = {{      "bundle", required_argument, 0, 'b'},
+                                   {        "list", required_argument, 0, 'l'},
+                                   {      "output", required_argument, 0, 'o'},
+                                   {   "keypoints",       no_argument, 0, 'k'},
+                                   {"depth_tuning", required_argument, 0, 'd'},
+                                   { "input_cloud", required_argument, 0, 'c'},
+                                   { "postprocess",       no_argument, 0, 'p'},
+                                   {   "reprocess",       no_argument, 0, 'r'},
+                                   {  "std_thresh", required_argument, 0, 's'},
+                                   {  "voxel_size", required_argument, 0, 'v'},
+                                   {  "mls_radius", required_argument, 0, 'm'},
+                                   {             0,                 0, 0,   0}};
+
+    bool bundleFileSet = false;
+    bool listFileSet = false;
+    bool outputSet = false;
+    bool inputCloudSet = false;
+    bool depthTuningSet = false;
+    bool stdThreshSet = false;
+    bool voxelSizeSet = false;
+    bool mlsRadiusSet = false;
+
+    reprocess = false;
+    postProcess = false;
+    drawKeypoints = false;
+
+    while ((c = getopt_long (argc, argv, "b:l:o:kd:c:prs:v:m:", longopts, &indexptr)) != -1)
+    {
+      std::stringstream ss;
+      switch (c)
+      {
+        case 'b':
+          bundleFileSet = true;
+          bundleFile = std::string (optarg);
+          break;
+        case 'l':
+          listFileSet = true;
+          listFile = std::string (optarg);
+          break;
+        case 'o':
+          outputSet = true;
+          output = std::string (optarg);
+          break;
+        case 'k':
+          drawKeypoints = true;
+          break;
+        case 'd':
+          depthTuningSet = true;
+          ss << optarg;
+          ss >> depthTuning;
+          if (!ss)
+          {
+            std::cout << "Failed to parse depth_tuning parameter" << std::endl;
+            help ();
+          }
+          break; 
+        case 'c':
+          inputCloudSet = true;
+          inputCloud = std::string (optarg);
+          break;
+        case 'p':
+          postProcess = true;
+          break;
+        case 'r':
+          reprocess = true;
+          break;
+        case 's':
+          stdThreshSet = true;
+          ss << optarg;
+          ss >> stdThresh;
+          if (!ss)
+          {
+            std::cout << "Failed to parse stdev mult threshold parameter" << std::endl;
+            help ();
+          }
+          break;
+        case 'v':
+          voxelSizeSet = true;
+          ss << optarg;
+          ss >> voxelSize;
+          if (!ss)
+          {
+            std::cout << "Failed to parse voxel size parameter" << std::endl;
+            help ();
+          }
+          break;
+        case 'm':
+          mlsRadiusSet = true;
+          ss << optarg;
+          ss >> mlsRadius;
+          if (!ss)
+          {
+            std::cout << "Failed to parse MLS radius parameter" << std::endl;
+            help ();
+          } 
+          break;
+        default:
+          std::cout << "Unknown option " << c << std::endl;
+          help ();
+          break;
+      }
+    }
+
+    if (!reprocess)
+    {
+      if (!bundleFileSet)
+      {
+        std::cout << "bundle option is required if not reprocessing" << std::endl;
+        help ();
+      }
+      if (!listFileSet)
+      {
+        std::cout << "list option is required if not reprocessing" << std::endl;
+        help ();
+      }
+      if (inputCloudSet)
+      {
+        std::cout << "cloud option is only allowed if reprocessing" << std::endl;
+        help ();
+      }
+      if (!depthTuningSet)
+      {
+        depthTuning = 1.0;
+      }
+    }
+    else
+    {
+      if (bundleFileSet)
+      {
+        std::cout << "bundle option is only allowed if not reprocessing" << std::endl;
+        help ();
+      }
+      if (listFileSet)
+      {
+        std::cout << "list option is only allowed if not reprocessing" << std::endl;
+        help ();
+      }
+      if (!inputCloudSet)
+      {
+        std::cout << "cloud option is required if reprocessing" << std::endl;
+        help ();
+      }
+      if (depthTuningSet)
+      {
+        std::cout << "depth tuning option is only allowed if not reprocessing" << std::endl;
+        help ();
+      }
+      if (drawKeypoints)
+      {
+        std::cout << "draw keypoints options is only allowed if not reprocessing" << std::endl;
+        help ();
+      }
+    }
+
+    if (!outputSet)
+    {
+      std::cout << "output option is required" << std::endl;
+      help ();
+    }
+
+    if (!postProcess)
+    {
+      if (stdThreshSet)
+      {
+        std::cout << "std thresh option is only allowed if postprocessing" << std::endl;
+        help ();
+      }
+      if (voxelSizeSet)
+      {
+        std::cout << "voxel size option is only allowed if postprocessing" << std::endl;
+        help ();
+      }
+      if (mlsRadiusSet)
+      {
+        std::cout << "MLS radius option is only allowed if postprocessing" << std::endl;
+        help ();
+      }
+    }
+    else
+    {
+      if (!stdThreshSet)
+      {
+        std::cout << "std thresh option is required if postprocessing" << std::endl;
+        help ();
+      }
+      if (!voxelSizeSet)
+      {
+        std::cout << "voxel size option is required if postprocessing" << std::endl;
+        help ();
+      }
+      if (!mlsRadiusSet)
+      {
+        std::cout << "MLS radius option is required if postprocessing" << std::endl;
+        help ();
+      }
+    }
+  }
+};
 
 int
 main (int argc, char ** argv)
 {
-  if (argc < 4)
+  struct timeval tic, toc;
+
+  Options options (argc, argv);
+
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr combinedCloud (new pcl::PointCloud<pcl::PointXYZRGBNormal>());
+
+  std::cout << "Loading data" << std::endl;
+  gettimeofday (&tic, 0);
+  if (!options.reprocess)
   {
-    std::cerr << "Usage: " << argv[0] << " [bundle.out] [list.txt] [output] {draw_keypoints} {depth_tuning}" << std::endl;
-    return -1;
-  }
-
-  bool draw_keypoints = false;
-  if (argc == 5)
-  {
-    draw_keypoints = atoi (argv[4]);
-  }
-
-  float scale = 1;
-  if (argc == 6)
-  {
-    scale = atof (argv[5]);
-  }
-
-  BundleFile file (argv[1]);
-  const std::vector<BundleCamera> cameras = file.GetCameras();
-  std::ifstream images (argv[2]);
-
-//  pcl::PointCloud<pcl::PointXYZRGBNormal> combinedCloud;
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr combinedCloud (new pcl::PointCloud<pcl::PointXYZRGB>());
-
-  int index = 0;
-  int count = 0;
-  const int maxCount = 5;
-  while (images)// && count < maxCount)
-  {
-    std::string filename, line;
-    if (!(images >> filename))
+    BundleFile file (options.bundleFile);
+    const std::vector<BundleCamera> cameras = file.GetCameras();
+    std::ifstream images (options.listFile.c_str());
+    if (!images)
     {
-      break;
+      std::cout << "Failed to open list file" << std::endl;
+      options.help();
     }
-    getline (images, line);
-    if (!cameras[index].IsValid())
+
+    int index = 0;
+    int count = 0;
+    const int maxCount = 1;
+    while (images)// && count < maxCount)
     {
-      std::cerr << "Camera " << index << " is invalid." << std::endl;
+      std::string filename, line;
+      if (!(images >> filename))
+      {
+        break;
+      }
+      std::string tempFilename = options.listFile;
+      size_t list_index = options.listFile.find_last_of ("/");
+      if (list_index == std::string::npos)
+      {
+        list_index = 0;
+      }
+      filename = tempFilename.replace (list_index + 1, tempFilename.size() - list_index, filename);
+      getline (images, line);
+      assert (index < cameras.size());
+      if (!cameras[index].IsValid())
+      {
+        ++index;
+        continue;
+      }
+      size_t replacement = filename.find ("color.jpg");
+      if (replacement == std::string::npos)
+      {
+        ++index;
+        continue;
+      }
+      std::cout << "Opening " << filename << std::endl;
+      std::string filename2 (filename);
+      assert (replacement + 9 <= filename2.size());
+      filename2.replace (replacement, 9, "depth.raw");
+      std::string keyFilename (filename);
+      assert (replacement + 9 <= keyFilename.size());
+      keyFilename.replace (replacement, 9, "color.ks");
+      if (!options.drawKeypoints)
+      {
+        keyFilename = "";
+      }
+      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (filename, filename2, keyFilename, cameras[index], options.depthTuning);
+      *combinedCloud += *points;
+      ++count;
       ++index;
-      continue;
     }
-    std::cerr << filename << std::endl;
-    size_t replacement = filename.find ("color.jpg");
-    if (replacement == std::string::npos)
-    {
-      ++index;
-      continue;
-    }
-    std::string filename2 (filename);
-    filename2.replace (replacement, 15, "depth.raw");
-    std::string keyFilename (filename);
-    keyFilename.replace (replacement, 15, "color.ks");
-    std::cerr << filename2 << std::endl;
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr points = LoadCloud (filename, filename2, keyFilename, draw_keypoints, cameras[index], scale);
-    *combinedCloud += *points;
-    ++count;
-    ++index;
+    images.close();
   }
-#if 1
-  pcl::PointCloud<pcl::PointXYZRGBNormal> final;
-  const int desired = 10000000;
-  const float probability = (float)desired/(float)combinedCloud->size();
-  for (pcl::PointCloud<pcl::PointXYZRGB>::iterator i = combinedCloud->begin(); i != combinedCloud->end(); ++i)
+  else
   {
-    if ((float)rand()/((float)RAND_MAX + 1) < probability)
+    if (-1 == pcl::io::loadPCDFile (options.inputCloud, *combinedCloud))
     {
+      std::cout << "Failed to load cloud for reprocessing" << std::endl;
+      options.help(); 
+    }
+  }
+  gettimeofday (&toc, 0);
+  std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+
+  if (options.postProcess)
+  {
+#if 0
+    pcl::PointCloud<pcl::PointXYZRGBNormal> final;
+    const int desired = 10000000;
+    const float probability = (float)desired/(float)combinedCloud->size();
+    for (pcl::PointCloud<pcl::PointXYZRGB>::iterator i = combinedCloud->begin(); i != combinedCloud->end(); ++i)
+    {
+      if ((float)rand()/((float)RAND_MAX + 1) < probability)
+      {
+        pcl::PointXYZRGBNormal newPoint;
+        newPoint.x = i->x;
+        newPoint.y = i->y;
+        newPoint.z = i->z;
+        newPoint.rgb = i->rgb;
+        final.push_back (newPoint);
+      }
+    }  
+#else
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr reduced (new pcl::PointCloud<pcl::PointXYZRGBNormal>());
+
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGBNormal> outlierRemoval;
+    outlierRemoval.setInputCloud (combinedCloud);
+    outlierRemoval.setNegative (false);
+    outlierRemoval.setStddevMulThresh(options.stdThresh);
+    std::cout << "Statistical outlier removal on size " << combinedCloud->size() << std::flush;
+    gettimeofday (&tic, 0);
+    outlierRemoval.filter (*reduced);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+
+    pcl::VoxelGrid<pcl::PointXYZRGBNormal> downsampler;
+    downsampler.setInputCloud (reduced);
+    downsampler.setLeafSize (options.voxelSize, options.voxelSize, options.voxelSize);
+    std::cout << "Voxel grid downsampling on size " << reduced->size() << std::flush;
+    gettimeofday (&tic, 0);
+    downsampler.filter (*reduced);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+  
+    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
+    tree->setInputCloud (reduced);
+    pcl::PointCloud <pcl::PointNormal>::Ptr normals (new pcl::PointCloud<pcl::PointNormal>());
+    pcl::MovingLeastSquares<pcl::PointXYZRGBNormal, pcl::PointNormal> normalEstimation;
+    normalEstimation.setInputCloud (reduced);
+    normalEstimation.setOutputNormals (normals);
+    normalEstimation.setSearchRadius (options.mlsRadius);
+    normalEstimation.setSearchMethod (tree);
+    pcl::PointCloud<pcl::PointXYZRGBNormal> cleaned;
+    std::cout << "Moving least squares on size " << reduced->size() << std::flush;
+    gettimeofday (&tic, 0);
+    normalEstimation.reconstruct (cleaned);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator k;
+    pcl::PointCloud<pcl::PointNormal>::const_iterator j;
+    pcl::PointCloud<pcl::PointXYZRGBNormal> final;
+    for (i = cleaned.begin(), j = normals->begin(), k = reduced->begin(); 
+         i != cleaned.end(); ++i, ++j, ++k)
+    {
+      double dot = k->normal_x*j->normal_x + k->normal_y*j->normal_y + k->normal_z*j->normal_z;
+      int flip = (dot > 0) ? 1 : -1;
       pcl::PointXYZRGBNormal newPoint;
+      newPoint.normal_x = flip*j->normal_x;
+      newPoint.normal_y = flip*j->normal_y;
+      newPoint.normal_z = flip*j->normal_z;
+      newPoint.rgb = k->rgb;
       newPoint.x = i->x;
       newPoint.y = i->y;
       newPoint.z = i->z;
-      newPoint.rgb = i->rgb;
       final.push_back (newPoint);
     }
-  }
-#else
-  pcl::PointCloud<pcl::PointXYZRGB>::Ptr reduced (new pcl::PointCloud<pcl::PointXYZRGB>());
-  std::cerr << combinedCloud->size() << std::endl;
-  pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> outlierRemoval;
-  outlierRemoval.setInputCloud (combinedCloud);
-  outlierRemoval.setNegative (false);
-  outlierRemoval.setStddevMulThresh(2);
-  outlierRemoval.filter (*reduced);
-  std::cerr << reduced->size() << std::endl;
-  pcl::VoxelGrid<pcl::PointXYZRGB> downsampler;
-  downsampler.setInputCloud (reduced);
-  downsampler.setLeafSize (0.01, 0.01, 0.01);
-  downsampler.filter (*reduced);
-  std::cerr << reduced->size() << std::endl;
-  pcl::KdTree<pcl::PointXYZRGB>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGB> > ();
-  tree->setInputCloud (reduced);
-  pcl::PointCloud <pcl::PointNormal>::Ptr normals (new pcl::PointCloud<pcl::PointNormal>());
-  pcl::MovingLeastSquares<pcl::PointXYZRGB, pcl::PointNormal> normalEstimation;
-  normalEstimation.setInputCloud (reduced);
-  normalEstimation.setOutputNormals (normals);
-  normalEstimation.setSearchRadius (0.04);
-  normalEstimation.setSearchMethod (tree);
-  pcl::PointCloud<pcl::PointXYZRGB> cleaned;
-  normalEstimation.reconstruct (cleaned);
-  pcl::PointCloud<pcl::PointXYZRGB>::const_iterator i;
-  pcl::PointCloud<pcl::PointXYZRGB>::const_iterator k;
-  pcl::PointCloud<pcl::PointNormal>::const_iterator j;
-  pcl::PointCloud<pcl::PointXYZRGBNormal> final;
-  for (i = cleaned.begin(), j = normals->begin(), k = reduced->begin(); 
-       i != cleaned.end(); ++i, ++j, ++k)
-  {
-    pcl::PointXYZRGBNormal newPoint;
-    newPoint.normal_x = j->normal_x;
-    newPoint.normal_y = j->normal_y;
-    newPoint.normal_z = j->normal_z;
-    newPoint.rgb = k->rgb;
-    newPoint.x = i->x;
-    newPoint.y = i->y;
-    newPoint.z = i->z;
-    final.push_back (newPoint);
-  }
-  reorient (final);
+    std::cout << "Reorienting on size " << final.size() << std::flush;
+    gettimeofday (&tic, 0);
+    reorient (final);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 #endif
-  std::stringstream ss_ply, ss_pcd;
-  ss_ply << argv[3] << ".ply";
-  ss_pcd << argv[3] << ".pcd";
-  savePlyFile (ss_ply.str(), final);
-  pcl::io::savePCDFile (ss_pcd.str(), final);
-  images.close();
+    std::cout << "Saving ply of size " << final.size() << std::flush;
+    gettimeofday (&tic, 0);
+    savePlyFile (options.output + ".ply", final);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+
+    std::cout << "Saving pcd of size " << final.size() << std::flush;
+    gettimeofday (&tic, 0);
+    pcl::io::savePCDFile (options.output + ".pcd", final, true);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+  }
+  else
+  {
+    std::cout << "Saving ply of size " << combinedCloud->size() << std::flush;
+    gettimeofday (&tic, 0);
+    savePlyFile (options.output + ".ply", *combinedCloud);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+
+    std::cout << "Saving pcd of size " << combinedCloud->size() << std::flush;
+    gettimeofday (&tic, 0);
+    pcl::io::savePCDFile (options.output + ".pcd", *combinedCloud, true);
+    gettimeofday (&toc, 0);
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+  }
  
-  return 0;
 }
