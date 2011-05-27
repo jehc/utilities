@@ -22,6 +22,8 @@
 
 #include "ply_io.h"
 
+#include "omp.h"
+
 std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
 {
   std::ifstream input (keypointFilename.c_str());
@@ -50,7 +52,7 @@ std::set<std::pair<int, int> > LoadKeys (const std::string & keypointFilename)
   return keys;
 }
 
-pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, const BundleCamera & camera, float scale)
+pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (const std::string & colorFilename, const std::string & depthFilename, const std::string & keypointFilename, const BundleCamera & camera, float scale, int downscale)
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points (new pcl::PointCloud<pcl::PointXYZRGBNormal>());
 
@@ -111,9 +113,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (const std::string & colo
   cv::initUndistortRectifyMap (cameraMatrix, distCoeffs, cv::Mat::eye (3, 3, CV_32FC1), cameraMatrix, depthMapDist.size(), CV_32FC1, map1, map2);
   cv::remap (depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST);
 
-  for (int j = 0; j < depthMap.rows; ++j)
+  for (int j = 0; j < depthMap.rows; j += downscale)
   {
-    for (int i = 0; i < depthMap.cols; ++i)
+    for (int i = 0; i < depthMap.cols; i += downscale)
     {
       float depth = depthMap.at<float> (j, i);
       if (depth == 0)
@@ -133,12 +135,31 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (const std::string & colo
       p = p - t/scale;
       p = R.t() * p;
 
-      cv::Mat diff = depth*(-R.t()*t/scale - p);
+      cv::Mat p_cam (cv::Vec3f(0, 0, 0));
+      p_cam = cameraMatrix.inv() * p_cam;
+      p_cam.at<float>(2, 0) *= -1;
+
+      p_cam = p_cam - t/scale;
+      p_cam = R.t() * p_cam;
+
+      cv::Mat diff = p_cam - p;
 
       pcl::PointXYZRGBNormal point;
       point.x = p.at<float>(0,0);
       point.y = p.at<float>(1,0);
       point.z = p.at<float>(2,0);
+
+      if (isnan (point.x) || isnan (point.y) || isnan (point.z))
+      {
+        std::cout << "NaN found in point cloud" << std::endl;
+        std::cout << "Point: " << p << std::endl;
+        std::cout << "i: " << i << std::endl;
+        std::cout << "j: " << j << std::endl;
+        std::cout << "depth: " << depth << std::endl;
+        std::cout << "z-buffer: " << depthMap.at<float> (j, i) << std::endl;
+        std::cout << "R: " << R << std::endl;
+        std::cout << "t: " << t << std::endl;
+      }
 
       point.normal_x = diff.at<float>(0, 0);
       point.normal_y = diff.at<float>(1, 0);
@@ -474,6 +495,8 @@ struct Options
   double mlsRadius;
   bool reprocess;
   bool postProcess;
+  int downscale;
+  bool validateData;
 
   void
   help () const
@@ -489,6 +512,8 @@ struct Options
     std::cout << "  --std_thresh [double]" << std::endl;
     std::cout << "  --voxel_size [double]" << std::endl;
     std::cout << "  --mls_radius [double]" << std::endl;
+    std::cout << "  --downscale [int]" << std::endl;
+    std::cout << "  --validate_data" << std::endl;
     std::cout << "  --help" << std::endl;
     exit (1);
   }
@@ -498,17 +523,19 @@ struct Options
     int c;
     int indexptr;
 
-    struct option longopts [12] = {{      "bundle", required_argument, 0, 'b'},
-                                   {        "list", required_argument, 0, 'l'},
-                                   {      "output", required_argument, 0, 'o'},
-                                   {   "keypoints",       no_argument, 0, 'k'},
-                                   {"depth_tuning", required_argument, 0, 'd'},
-                                   { "input_cloud", required_argument, 0, 'c'},
-                                   { "postprocess",       no_argument, 0, 'p'},
-                                   {   "reprocess",       no_argument, 0, 'r'},
-                                   {  "std_thresh", required_argument, 0, 's'},
-                                   {  "voxel_size", required_argument, 0, 'v'},
-                                   {  "mls_radius", required_argument, 0, 'm'},
+    struct option longopts [14] = {{       "bundle", required_argument, 0, 'b'},
+                                   {         "list", required_argument, 0, 'l'},
+                                   {       "output", required_argument, 0, 'o'},
+                                   {    "keypoints",       no_argument, 0, 'k'},
+                                   { "depth_tuning", required_argument, 0, 'd'},
+                                   {  "input_cloud", required_argument, 0, 'c'},
+                                   {  "postprocess",       no_argument, 0, 'p'},
+                                   {    "reprocess",       no_argument, 0, 'r'},
+                                   {   "std_thresh", required_argument, 0, 's'},
+                                   {   "voxel_size", required_argument, 0, 'v'},
+                                   {   "mls_radius", required_argument, 0, 'm'},
+                                   {    "downscale", required_argument, 0, 'x'},
+                                   {"validate_data",       no_argument, 0, 'z'},
                                    {             0,                 0, 0,   0}};
 
     bool bundleFileSet = false;
@@ -519,10 +546,12 @@ struct Options
     bool stdThreshSet = false;
     bool voxelSizeSet = false;
     bool mlsRadiusSet = false;
+    bool downscaleSet = false;
 
     reprocess = false;
     postProcess = false;
     drawKeypoints = false;
+    validateData = false;
 
     while ((c = getopt_long (argc, argv, "b:l:o:kd:c:prs:v:m:", longopts, &indexptr)) != -1)
     {
@@ -543,6 +572,9 @@ struct Options
           break;
         case 'k':
           drawKeypoints = true;
+          break;
+        case 'z':
+          validateData = true;
           break;
         case 'd':
           depthTuningSet = true;
@@ -594,6 +626,16 @@ struct Options
             help ();
           } 
           break;
+        case 'x':
+          downscaleSet = true;
+          ss << optarg;
+          ss >> downscale;
+          if (!ss)
+          {
+            std::cout << "Failed to parse downscale parameter" << std::endl;
+            help();
+          }
+          break;
         default:
           std::cout << "Unknown option " << c << std::endl;
           help ();
@@ -622,6 +664,10 @@ struct Options
       {
         depthTuning = 1.0;
       }
+      if (!downscaleSet)
+      {
+        downscale = 1;
+      }
     }
     else
     {
@@ -647,8 +693,12 @@ struct Options
       }
       if (drawKeypoints)
       {
-        std::cout << "draw keypoints options is only allowed if not reprocessing" << std::endl;
+        std::cout << "draw keypoints option is only allowed if not reprocessing" << std::endl;
         help ();
+      }
+      if (downscaleSet)
+      {
+        std::cout << "downscale option is only allowed if not reprocessing" << std::endl;
       }
     }
 
@@ -719,9 +769,7 @@ main (int argc, char ** argv)
       options.help();
     }
 
-    int index = 0;
-    int count = 0;
-    const int maxCount = 1;
+    std::vector<std::string> imageList;
     while (images)// && count < maxCount)
     {
       std::string filename, line;
@@ -729,43 +777,48 @@ main (int argc, char ** argv)
       {
         break;
       }
+      imageList.push_back (filename);
+      getline (images, line);
+    }
+    images.close();
+    #pragma omp parallel for
+    for (int i = 0; i < imageList.size(); ++i)
+    {
+      const std::string & filename = imageList [i];
       std::string tempFilename = options.listFile;
       size_t list_index = options.listFile.find_last_of ("/");
       if (list_index == std::string::npos)
       {
         list_index = 0;
       }
-      filename = tempFilename.replace (list_index + 1, tempFilename.size() - list_index, filename);
-      getline (images, line);
-      assert (index < cameras.size());
-      if (!cameras[index].IsValid())
+      std::string filenameNew = tempFilename.replace (list_index + 1, tempFilename.size() - list_index, filename);
+      assert (i < cameras.size());
+      if (!cameras[i].IsValid())
       {
-        ++index;
         continue;
       }
-      size_t replacement = filename.find ("color.jpg");
+      size_t replacement = filenameNew.find ("color.jpg");
       if (replacement == std::string::npos)
       {
-        ++index;
         continue;
       }
-      std::cout << "Opening " << filename << std::endl;
-      std::string filename2 (filename);
+      std::cout << "Opening " << filenameNew << std::endl;
+      std::string filename2 (filenameNew);
       assert (replacement + 9 <= filename2.size());
       filename2.replace (replacement, 9, "depth.raw");
-      std::string keyFilename (filename);
+      std::string keyFilename (filenameNew);
       assert (replacement + 9 <= keyFilename.size());
       keyFilename.replace (replacement, 9, "color.ks");
       if (!options.drawKeypoints)
       {
         keyFilename = "";
       }
-      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (filename, filename2, keyFilename, cameras[index], options.depthTuning);
-      *combinedCloud += *points;
-      ++count;
-      ++index;
+      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (filenameNew, filename2, keyFilename, cameras[i], options.depthTuning, options.downscale);
+      #pragma omp critical
+      {
+        *combinedCloud += *points;
+      }
     }
-    images.close();
   }
   else
   {
@@ -777,6 +830,20 @@ main (int argc, char ** argv)
   }
   gettimeofday (&toc, 0);
   std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+
+  if (options.validateData)
+  {
+    for(pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = combinedCloud->begin(); 
+        i != combinedCloud->end(); ++i)
+    {
+      if (isnan (i->x)) std::cout << "NaN found in x" << std::endl;
+      if (isnan (i->y)) std::cout << "NaN found in y" << std::endl;
+      if (isnan (i->z)) std::cout << "NaN found in z" << std::endl;
+      if (isinf (i->x)) std::cout << "Inf found in x" << std::endl;
+      if (isinf (i->y)) std::cout << "Inf found in y" << std::endl;
+      if (isinf (i->z)) std::cout << "Inf found in z" << std::endl;
+    }
+  }
 
   if (options.postProcess)
   {
@@ -799,7 +866,7 @@ main (int argc, char ** argv)
 #else
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr reduced (new pcl::PointCloud<pcl::PointXYZRGBNormal>());
 
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGBNormal> outlierRemoval;
+/*    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGBNormal> outlierRemoval;
     outlierRemoval.setInputCloud (combinedCloud);
     outlierRemoval.setNegative (false);
     outlierRemoval.setStddevMulThresh(options.stdThresh);
@@ -808,11 +875,11 @@ main (int argc, char ** argv)
     outlierRemoval.filter (*reduced);
     gettimeofday (&toc, 0);
     std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
-
+*/
     pcl::VoxelGrid<pcl::PointXYZRGBNormal> downsampler;
-    downsampler.setInputCloud (reduced);
+    downsampler.setInputCloud (combinedCloud);
     downsampler.setLeafSize (options.voxelSize, options.voxelSize, options.voxelSize);
-    std::cout << "Voxel grid downsampling on size " << reduced->size() << std::flush;
+    std::cout << "Voxel grid downsampling on size " << combinedCloud->size() << std::flush;
     gettimeofday (&tic, 0);
     downsampler.filter (*reduced);
     gettimeofday (&toc, 0);
@@ -841,7 +908,12 @@ main (int argc, char ** argv)
          i != cleaned.end(); ++i, ++j, ++k)
     {
       double dot = k->normal_x*j->normal_x + k->normal_y*j->normal_y + k->normal_z*j->normal_z;
-      int flip = (dot > 0) ? 1 : -1;
+      double length = j->normal_x*j->normal_x + j->normal_y*j->normal_y + j->normal_z*j->normal_z;
+      double flip = (dot > 0) ? 1.0/length : -1.0/length;
+      if (length == 0)
+      {
+        continue;
+      }
       pcl::PointXYZRGBNormal newPoint;
       newPoint.normal_x = flip*j->normal_x;
       newPoint.normal_y = flip*j->normal_y;
