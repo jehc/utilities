@@ -9,6 +9,9 @@
 #include <limits>
 #include <pcl/io/pcd_io.h>
 #include <opencv2/opencv.hpp>
+#include <queue>
+
+#include "omp.h"
 
 struct Triangle
 {
@@ -121,6 +124,16 @@ getIntersectionCount (const aiVector3D & source, const aiVector3D & normal,
   return intersectionCount;
 }
 
+aiVector3D
+mult (const aiMatrix4x4 & mat, const aiVector3D & vec)
+{
+  float x = mat[0][0]*vec[0] + mat[0][1]*vec[1] + mat[0][2]*vec[2] + mat[0][3];
+  float y = mat[1][0]*vec[0] + mat[1][1]*vec[1] + mat[1][2]*vec[2] + mat[1][3];
+  float z = mat[2][0]*vec[0] + mat[2][1]*vec[1] + mat[2][2]*vec[2] + mat[2][3];
+  float w = mat[3][0]*vec[0] + mat[3][1]*vec[1] + mat[3][2]*vec[2] + mat[3][3];
+  return 0.0254000*aiVector3D (x/w, y/w, z/w);
+}
+
 int
 main (int argc, char ** argv)
 {
@@ -139,9 +152,45 @@ main (int argc, char ** argv)
   }
   std::vector<Triangle> triangles;
   aiMesh ** meshes = scene->mMeshes;
-  for (int i = 0; i < scene->mNumMeshes; ++i)
+
+  std::vector<std::pair<aiNode *, aiMatrix4x4> > nodes;
+  std::queue<std::pair<aiNode *, aiMatrix4x4> > openList;
+  openList.push (std::make_pair(scene->mRootNode, aiMatrix4x4 (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)));
+
+  while (!openList.empty())
   {
-    aiMesh * mesh = meshes[i];
+    std::pair<aiNode *, aiMatrix4x4> node = openList.front ();
+    openList.pop ();
+    aiMatrix4x4 trans = node.second*node.first->mTransformation;
+    if (node.first->mParent)
+    {
+      std::cout << node.first->mParent->mName.data << " ";
+    }
+    std::cout << node.first->mName.data << std::endl;
+    for (int i = 0; i < 4; ++i)
+    {
+      for (int j = 0; j < 4; ++j)
+      {
+        std::cout << trans[i][j] << " ";
+      }
+      std::cout << std::endl;
+    }
+    std::cout << "---" << std::endl;
+    nodes.push_back (std::make_pair (node.first, trans));
+    aiNode ** children = node.first->mChildren;
+    for (int i = 0; i < node.first->mNumChildren; ++i)
+    {
+      openList.push (std::make_pair (children [i], trans));
+    }
+  }
+
+  #pragma omp parallel for
+  for (int i = 0; i < nodes.size(); ++i)
+  {
+    unsigned int * meshIndices = nodes[i].first->mMeshes;
+    for (int m = 0; m < nodes[i].first->mNumMeshes; ++m)
+    {
+    aiMesh * mesh = meshes[meshIndices[m]];
     aiVector3D * vertices = mesh->mVertices;
     aiColor4D ** colors = mesh->mColors;
     aiFace * faces = mesh->mFaces;
@@ -155,9 +204,10 @@ main (int argc, char ** argv)
         continue;
       }
 
-      const aiVector3D & v1 = vertices[indices[0]];
-      const aiVector3D & v2 = vertices[indices[1]];
-      const aiVector3D & v3 = vertices[indices[2]];
+      aiVector3D v1 = mult (nodes[i].second, vertices[indices[0]]);
+      aiVector3D v2 = mult (nodes[i].second, vertices[indices[1]]);
+      aiVector3D v3 = mult (nodes[i].second, vertices[indices[2]]);
+
       aiVector3D p1 = v2 - v1;
       aiVector3D p2 = v3 - v1;
       aiVector3D normal (p1[1]*p2[2] - p1[2]*p2[1], 
@@ -165,11 +215,17 @@ main (int argc, char ** argv)
                          p1[0]*p2[1] - p1[1]*p2[0]);
       normal.Normalize();
       //normals[3*j];
-      triangles.push_back (Triangle(v1, v2, v3, normal));
+      #pragma omp critical
+      {
+        triangles.push_back (Triangle(v1, v2, v3, normal));
+      }
+    }
     }
   }
 
-  for (size_t i = 0; i < triangles.size(); ++i)
+  int done = 0;
+  #pragma omp parallel for
+  for (int i = 0; i < triangles.size(); ++i)
   {
     Triangle & t = triangles[i];
     aiVector3D & normal = t.normal;
@@ -177,7 +233,8 @@ main (int argc, char ** argv)
     aiVector3D p2 = t.v3 - t.v1;
 
     float area = areaOfTriangle (t);
-    int numSamples = (int)(1 + area*1);
+    int numSamples = (int)(1 + area*10000);
+    #pragma omp parallel for
     for (int k = 0; k < numSamples; ++k)
     {
       float u = (float)rand()/((float)RAND_MAX + 1);
@@ -188,7 +245,7 @@ main (int argc, char ** argv)
         continue;
       }
       aiVector3D sample = u*p1 + v*p2 + t.v1;
-
+#if 0
       double offsetTheta = 0;
       for (int l = 0; l < 40; ++l)
       {
@@ -238,7 +295,8 @@ offset = normal;
 #if 0
       std::cerr << "Offset " << offset.SquareLength() << std::endl;
 #endif
-
+#endif
+      aiVector3D offset = normal;
       aiVector3D source1 = sample - 1e-4*offset;
       aiVector3D source2 = sample + 1e-4*offset;
 
@@ -252,7 +310,7 @@ offset = normal;
       else if (intersectionCount2 % 2 == 1 && intersectionCount1 % 1 == 0) 
       {
         normal = -normal;
-      }
+      } 
       else
       {
       //  continue;
@@ -270,15 +328,22 @@ offset = normal;
       point.normal_x = normal[0];
       point.normal_y = normal[1];
       point.normal_z = normal[2];
-      samples->push_back (point);
+      #pragma omp critical
+      {
+        samples->push_back (point);
+      }
     }
 
-    std::cout << (100*(i+1))/triangles.size() << "% complete\r" << std::flush;
-
+    #pragma omp critical
+    {
+      std::cout << (100*(done+1))/triangles.size() << "% complete\r" << std::flush;
+      ++done;
+    }
   }
 
   std::cout << std::endl;
 
+#if 0
   pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> tree;
   tree.setInputCloud (samples);
   std::vector<int> indices (20);
@@ -292,7 +357,8 @@ offset = normal;
      tree.nearestKSearch (*i, 20, indices, dists);
      pcl::PointNormal normal;
      int oppositeCount = 0;
-     for (size_t j = 0; j < indices.size(); ++j)
+     #pragma omp parallel for
+     for (int j = 0; j < indices.size(); ++j)
      {
        const pcl::PointXYZRGBNormal & point = *(samples->begin() + indices[j]);
        if (i->normal_x*point.normal_x + i->normal_y*point.normal_y + i->normal_z*point.normal_z < 0)
@@ -317,6 +383,7 @@ offset = normal;
   }
   std::cerr << std::endl;
   }
+#endif
   aiReleaseImport(scene);
   aiDetachAllLogStreams();
   std::string filename (argv[1]);
