@@ -61,8 +61,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   float                scale,
   int                  downscale )
 {
-  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points (
-    new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
   cv::Mat colorImageDist = cv::imread ( colorFilename );
 
@@ -84,8 +83,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
     throw std::exception ();
   }
   cv::Mat1f depthMapDist ( rows, cols );
-  if ( !depthInput.read ( ( char * )depthMapDist.data, depthMapDist.rows *
-                          depthMapDist.cols * sizeof ( float ) ) )
+  if ( !depthInput.read ( ( char * )depthMapDist.data, depthMapDist.rows * depthMapDist.cols * sizeof ( float ) ) )
   {
     std::cout << "Could not read data in file " << depthFilename << std::endl;
     throw std::exception ();
@@ -119,9 +117,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   //cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
 
   cv::Mat map1, map2;
-  cv::initUndistortRectifyMap ( cameraMatrix, distCoeffs,
-                                cv::Mat::eye ( 3, 3, CV_32FC1 ), cameraMatrix,
-                                depthMapDist.size (), CV_32FC1, map1, map2 );
+  cv::initUndistortRectifyMap ( cameraMatrix, distCoeffs, cv::Mat::eye ( 3,
+      3,
+      CV_32FC1 ), cameraMatrix, depthMapDist.size (), CV_32FC1, map1, map2 );
   cv::remap ( depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST );
 
   for ( int j = 0; j < depthMap.rows; j += downscale )
@@ -135,9 +133,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       }
 
       depth = -0.018 * depth * depth + 1.0038 * depth + 0.005;
-      cv::Mat p ( cv::Vec3f ( ( float )i,
-                              ( float )depthMap.rows - 1.0 - ( float )j,
-                              1 ) );
+      cv::Mat p ( cv::Vec3f ( ( float )i, ( float )depthMap.rows - 1.0 - ( float )j, 1 ) );
       p = depth * p;
 
       p = cameraMatrix.inv () * p;
@@ -213,10 +209,7 @@ generate_histogram (
       histogram[i][j] = 0;
     }
   }
-  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i =
-          pointCloud.begin ();
-        i != pointCloud.end ();
-        ++i )
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = pointCloud.begin (); i != pointCloud.end (); ++i )
   {
     float x = i->normal_x;
     float y = i->normal_y;
@@ -259,8 +252,7 @@ generate_histogram (
       double phi_0 = M_PI * j / 60;
       double delta_phi = M_PI / 60;
       double delta_theta = M_PI / 60;
-      double normalization = delta_phi *
-                             ( cos ( theta_0 ) - cos ( theta_0 + delta_theta ) );
+      double normalization = delta_phi * ( cos ( theta_0 ) - cos ( theta_0 + delta_theta ) );
       histogram[i][j] /= normalization;
     }
   }
@@ -335,8 +327,7 @@ compute_axis ( const std::vector<std::vector<float> > & histogram,
 
       double dot1 = xtemp * v1[0] + ytemp * v1[1] + ztemp * v1[2];
       double dot2 = xtemp * v2[0] + ytemp * v2[1] + ztemp * v2[2];
-      if ( dot1 > -slack && dot1 < slack && dot2 > -slack && dot2 < slack &&
-           histogram[i][j] >= max )
+      if ( dot1 > -slack && dot1 < slack && dot2 > -slack && dot2 < slack && histogram[i][j] >= max )
       {
         max = histogram[i][j];
         v3[0] = xtemp;
@@ -400,9 +391,7 @@ project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
     break;
   }
   double up[3] = { 0, 1, 0 };
-  double axis[3] =
-  { y[2] * up[1] - y[1] * up[2], y[0] * up[2] - y[2] * up[0], y[1] * up[0] -
-    y[0] * up[1] };
+  double axis[3] = { y[2] * up[1] - y[1] * up[2], y[0] * up[2] - y[2] * up[0], y[1] * up[0] - y[0] * up[1] };
   double angle = acos ( y[0] * up[0] + y[1] * up[1] + y[2] * up[2] );
   double R [9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
 
@@ -426,9 +415,7 @@ project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
   R[7] += sin ( angle ) * axis[0];
 #endif
 
-  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin ();
-        i != pointCloud.end ();
-        ++i )
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin (); i != pointCloud.end (); ++i )
   {
     double x, y, z, tempx, tempy, tempz;
     tempx = v1[0] * i->normal_x + v1[1] * i->normal_y + v1[2] * i->normal_z;
@@ -458,15 +445,9 @@ print_basis ( const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3 )
   fprintf ( stderr, "%f %f %f\n", v1[0], v1[1], v1[2] );
   fprintf ( stderr, "%f %f %f\n", v2[0], v2[1], v2[2] );
   fprintf ( stderr, "%f %f %f\n", v3[0], v3[1], v3[2] );
-  double angle1 = 180 *
-                  acos ( v1[0] * v2[0] + v1[1] * v2[1] + v1[2] *
-                         v2[2] ) / M_PI;
-  double angle2 = 180 *
-                  acos ( v2[0] * v3[0] + v2[1] * v3[1] + v2[2] *
-                         v3[2] ) / M_PI;
-  double angle3 = 180 *
-                  acos ( v3[0] * v1[0] + v3[1] * v1[1] + v3[2] *
-                         v1[2] ) / M_PI;
+  double angle1 = 180 * acos ( v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2] ) / M_PI;
+  double angle2 = 180 * acos ( v2[0] * v3[0] + v2[1] * v3[1] + v2[2] * v3[2] ) / M_PI;
+  double angle3 = 180 * acos ( v3[0] * v1[0] + v3[1] * v1[1] + v3[2] * v1[2] ) / M_PI;
   fprintf ( stderr, "%lf %lf %lf\n", angle1, angle2, angle3 );
 }
 
@@ -497,8 +478,7 @@ saveHistogram ( const std::string &                      filename,
       point.x = sin ( M_PI * i / 60 ) * cos ( M_PI * j / 60 );
       point.y = sin ( M_PI * i / 60 ) * sin ( M_PI * j / 60 );
       point.z = cos ( M_PI * i / 60 );
-      double norm = sqrt (
-        point.x * point.x + point.y * point.y + point.z * point.z );
+      double norm = sqrt ( point.x * point.x + point.y * point.y + point.z * point.z );
       point.x /= norm;
       point.y /= norm;
       point.z /= norm;
@@ -572,35 +552,20 @@ struct Options
     int indexptr;
 
     struct option longopts [14] =
-    {                                { "bundle",        required_argument,
-                                       0,                 'b' },
-                                     { "list",          required_argument,
-                                       0,
-                                       'l' },
-                                     { "output",        required_argument, 0,
-                                       'o' },
-                                     { "keypoints",     no_argument,       0,
-                                       'k' },
-                                     { "depth_tuning",  required_argument, 0,
-                                       'd' },
-                                     { "input_cloud",   required_argument, 0,
-                                       'c' },
-                                     { "postprocess",   no_argument,       0,
-                                       'p' },
-                                     { "reprocess",     no_argument,       0,
-                                       'r' },
-                                     { "std_thresh",    required_argument, 0,
-                                       's' },
-                                     { "voxel_size",    required_argument, 0,
-                                       'v' },
-                                     { "mls_radius",    required_argument, 0,
-                                       'm' },
-                                     { "downscale",     required_argument, 0,
-                                       'x' },
-                                     { "validate_data", no_argument,       0,
-                                       'z' },
-                                     { 0,               0,                 0,
-                                       0   } };
+    { { "bundle",        required_argument,          0,                 'b' },
+      { "list",          required_argument,          0,                 'l' },
+      { "output",        required_argument,          0,                 'o' },
+      { "keypoints",     no_argument,                0,                 'k' },
+      { "depth_tuning",  required_argument,          0,                 'd' },
+      { "input_cloud",   required_argument,          0,                 'c' },
+      { "postprocess",   no_argument,                0,                 'p' },
+      { "reprocess",     no_argument,                0,                 'r' },
+      { "std_thresh",    required_argument,          0,                 's' },
+      { "voxel_size",    required_argument,          0,                 'v' },
+      { "mls_radius",    required_argument,          0,                 'm' },
+      { "downscale",     required_argument,          0,                 'x' },
+      { "validate_data", no_argument,                0,                 'z' },
+      { 0,               0,                          0,                 0   } };
 
     bool bundleFileSet = false;
     bool listFileSet = false;
@@ -617,9 +582,7 @@ struct Options
     drawKeypoints = false;
     validateData = false;
 
-    while ( ( c =
-                getopt_long ( argc, argv, "b:l:o:kd:c:prs:v:m:", longopts,
-                              &indexptr ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:l:o:kd:c:prs:v:m:", longopts, &indexptr ) ) != -1 )
     {
       std::stringstream ss;
       switch ( c )
@@ -836,8 +799,7 @@ main ( int argc, char * * argv )
 
   Options options ( argc, argv );
 
-  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr combinedCloud (
-    new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr combinedCloud ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
   std::cout << "Loading data" << std::endl;
   gettimeofday ( &tic, 0 );
@@ -874,10 +836,7 @@ main ( int argc, char * * argv )
       {
         list_index = 0;
       }
-      std::string filenameNew = tempFilename.replace ( list_index + 1,
-                                                       tempFilename.size () -
-                                                       list_index,
-                                                       filename );
+      std::string filenameNew = tempFilename.replace ( list_index + 1, tempFilename.size () - list_index, filename );
       assert ( i < cameras.size () );
       if ( !cameras[i].IsValid () )
       {
@@ -926,9 +885,9 @@ main ( int argc, char * * argv )
 
   if ( options.validateData )
   {
-    for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i =
-            combinedCloud->begin ();
-          i != combinedCloud->end (); ++i )
+    for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = combinedCloud->begin ();
+          i != combinedCloud->end ();
+          ++i )
     {
       if ( isnan ( i->x ) )
       {
@@ -978,8 +937,7 @@ main ( int argc, char * * argv )
       }
     }
 #else
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr reduced (
-      new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr reduced ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
 /*    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGBNormal> outlierRemoval;
  *  outlierRemoval.setInputCloud (combinedCloud);
@@ -993,48 +951,37 @@ main ( int argc, char * * argv )
  */
     pcl::VoxelGrid<pcl::PointXYZRGBNormal> downsampler;
     downsampler.setInputCloud ( combinedCloud );
-    downsampler.setLeafSize ( options.voxelSize,
-                              options.voxelSize,
-                              options.voxelSize );
+    downsampler.setLeafSize ( options.voxelSize, options.voxelSize, options.voxelSize );
     std::cout << "Voxel grid downsampling on size " <<
     combinedCloud->size () << std::flush;
     gettimeofday ( &tic, 0 );
     downsampler.filter ( *reduced );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 
-    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree =
-      boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
+    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
     tree->setInputCloud ( reduced );
-    pcl::PointCloud <pcl::PointNormal>::Ptr normals (
-      new pcl::PointCloud<pcl::PointNormal>() );
-    pcl::MovingLeastSquares<pcl::PointXYZRGBNormal,
-                            pcl::PointNormal> normalEstimation;
+    pcl::PointCloud <pcl::PointNormal>::Ptr normals (      new pcl::PointCloud<pcl::PointNormal>() );
+    pcl::MovingLeastSquares<pcl::PointXYZRGBNormal, pcl::PointNormal> normalEstimation;
     normalEstimation.setInputCloud ( reduced );
     normalEstimation.setOutputNormals ( normals );
     normalEstimation.setSearchRadius ( options.mlsRadius );
     normalEstimation.setSearchMethod ( tree );
     pcl::PointCloud<pcl::PointXYZRGBNormal> cleaned;
-    std::cout << "Moving least squares on size " << reduced->size () <<
-    std::flush;
+    std::cout << "Moving least squares on size " << reduced->size () << std::flush;
     gettimeofday ( &tic, 0 );
     normalEstimation.reconstruct ( cleaned );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 
     pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i;
     pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator k;
     pcl::PointCloud<pcl::PointNormal>::const_iterator j;
     pcl::PointCloud<pcl::PointXYZRGBNormal> final;
-    for ( i = cleaned.begin (), j = normals->begin (), k = reduced->begin ();
-          i != cleaned.end (); ++i, ++j, ++k )
+    for ( i = cleaned.begin (), j = normals->begin (), k = reduced->begin (); i != cleaned.end (); ++i, ++j, ++k )
     {
-      double dot = k->normal_x * j->normal_x + k->normal_y * j->normal_y +
-                   k->normal_z * j->normal_z;
-      double length = j->normal_x * j->normal_x + j->normal_y * j->normal_y +
-                      j->normal_z * j->normal_z;
+      double dot = k->normal_x * j->normal_x + k->normal_y * j->normal_y + k->normal_z * j->normal_z;
+      double length = j->normal_x * j->normal_x + j->normal_y * j->normal_y + j->normal_z * j->normal_z;
       double flip = ( dot > 0 ) ? 1.0 / length : -1.0 / length;
       if ( length == 0 )
       {
@@ -1054,22 +1001,19 @@ main ( int argc, char * * argv )
     gettimeofday ( &tic, 0 );
     reorient ( final );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 #endif
     std::cout << "Saving ply of size " << final.size () << std::flush;
     gettimeofday ( &tic, 0 );
     savePlyFile ( options.output + ".ply", final );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 
     std::cout << "Saving pcd of size " << final.size () << std::flush;
     gettimeofday ( &tic, 0 );
     pcl::io::savePCDFile ( options.output + ".pcd", final, true );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
   }
   else
   {
@@ -1077,14 +1021,12 @@ main ( int argc, char * * argv )
     gettimeofday ( &tic, 0 );
     savePlyFile ( options.output + ".ply", *combinedCloud );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 
     std::cout << "Saving pcd of size " << combinedCloud->size () << std::flush;
     gettimeofday ( &tic, 0 );
     pcl::io::savePCDFile ( options.output + ".pcd", *combinedCloud, true );
     gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-    std::endl;
+    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
   }
 }
