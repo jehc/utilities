@@ -198,8 +198,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
 }
 
 std::vector<std::vector<float> >
-generate_histogram (
-  const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud )
+generate_histogram (  const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud )
 {
   std::vector<std::vector<float> > histogram ( 30, std::vector<float> ( 120 ) );
   for ( int i = 0; i < histogram.size (); ++i )
@@ -209,7 +208,9 @@ generate_histogram (
       histogram[i][j] = 0;
     }
   }
-  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = pointCloud.begin (); i != pointCloud.end (); ++i )
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = pointCloud.begin ();
+        i != pointCloud.end ();
+        ++i )
   {
     float x = i->normal_x;
     float y = i->normal_y;
@@ -415,7 +416,9 @@ project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
   R[7] += sin ( angle ) * axis[0];
 #endif
 
-  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin (); i != pointCloud.end (); ++i )
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin ();
+        i != pointCloud.end ();
+        ++i )
   {
     double x, y, z, tempx, tempy, tempz;
     tempx = v1[0] * i->normal_x + v1[1] * i->normal_y + v1[2] * i->normal_z;
@@ -552,20 +555,20 @@ struct Options
     int indexptr;
 
     struct option longopts [14] =
-    { { "bundle",        required_argument,          0,                 'b' },
-      { "list",          required_argument,          0,                 'l' },
-      { "output",        required_argument,          0,                 'o' },
-      { "keypoints",     no_argument,                0,                 'k' },
-      { "depth_tuning",  required_argument,          0,                 'd' },
-      { "input_cloud",   required_argument,          0,                 'c' },
-      { "postprocess",   no_argument,                0,                 'p' },
-      { "reprocess",     no_argument,                0,                 'r' },
-      { "std_thresh",    required_argument,          0,                 's' },
-      { "voxel_size",    required_argument,          0,                 'v' },
-      { "mls_radius",    required_argument,          0,                 'm' },
-      { "downscale",     required_argument,          0,                 'x' },
-      { "validate_data", no_argument,                0,                 'z' },
-      { 0,               0,                          0,                 0   } };
+    { { "bundle",        required_argument, 0, 'b' },
+      { "list",          required_argument, 0, 'l' },
+      { "output",        required_argument, 0, 'o' },
+      { "keypoints",     no_argument,       0, 'k' },
+      { "depth_tuning",  required_argument, 0, 'd' },
+      { "input_cloud",   required_argument, 0, 'c' },
+      { "postprocess",   no_argument,       0, 'p' },
+      { "reprocess",     no_argument,       0, 'r' },
+      { "std_thresh",    required_argument, 0, 's' },
+      { "voxel_size",    required_argument, 0, 'v' },
+      { "mls_radius",    required_argument, 0, 'm' },
+      { "downscale",     required_argument, 0, 'x' },
+      { "validate_data", no_argument,       0, 'z' },
+      { 0,               0,                 0, 0   } };
 
     bool bundleFileSet = false;
     bool listFileSet = false;
@@ -631,8 +634,7 @@ struct Options
         ss >> stdThresh;
         if ( !ss )
         {
-          std::cout << "Failed to parse stdev mult threshold parameter" <<
-          std::endl;
+          std::cout << "Failed to parse stdev mult threshold parameter" << std::endl;
           help ();
         }
         break;
@@ -677,20 +679,17 @@ struct Options
     {
       if ( !bundleFileSet )
       {
-        std::cout << "bundle option is required if not reprocessing" <<
-        std::endl;
+        std::cout << "bundle option is required if not reprocessing" << std::endl;
         help ();
       }
       if ( !listFileSet )
       {
-        std::cout << "list option is required if not reprocessing" <<
-        std::endl;
+        std::cout << "list option is required if not reprocessing" << std::endl;
         help ();
       }
       if ( inputCloudSet )
       {
-        std::cout << "cloud option is only allowed if reprocessing" <<
-        std::endl;
+        std::cout << "cloud option is only allowed if reprocessing" << std::endl;
         help ();
       }
       if ( !depthTuningSet )
@@ -706,14 +705,12 @@ struct Options
     {
       if ( bundleFileSet )
       {
-        std::cout << "bundle option is only allowed if not reprocessing" <<
-        std::endl;
+        std::cout << "bundle option is only allowed if not reprocessing" << std::endl;
         help ();
       }
       if ( listFileSet )
       {
-        std::cout << "list option is only allowed if not reprocessing" <<
-        std::endl;
+        std::cout << "list option is only allowed if not reprocessing" << std::endl;
         help ();
       }
       if ( !inputCloudSet )
@@ -723,21 +720,17 @@ struct Options
       }
       if ( depthTuningSet )
       {
-        std::cout <<
-        "depth tuning option is only allowed if not reprocessing" << std::endl;
+        std::cout << "depth tuning option is only allowed if not reprocessing" << std::endl;
         help ();
       }
       if ( drawKeypoints )
       {
-        std::cout <<
-        "draw keypoints option is only allowed if not reprocessing" <<
-        std::endl;
+        std::cout << "draw keypoints option is only allowed if not reprocessing" << std::endl;
         help ();
       }
       if ( downscaleSet )
       {
-        std::cout << "downscale option is only allowed if not reprocessing" <<
-        std::endl;
+        std::cout << "downscale option is only allowed if not reprocessing" << std::endl;
       }
     }
 
@@ -751,20 +744,17 @@ struct Options
     {
       if ( stdThreshSet )
       {
-        std::cout << "std thresh option is only allowed if postprocessing" <<
-        std::endl;
+        std::cout << "std thresh option is only allowed if postprocessing" << std::endl;
         help ();
       }
       if ( voxelSizeSet )
       {
-        std::cout << "voxel size option is only allowed if postprocessing" <<
-        std::endl;
+        std::cout << "voxel size option is only allowed if postprocessing" << std::endl;
         help ();
       }
       if ( mlsRadiusSet )
       {
-        std::cout << "MLS radius option is only allowed if postprocessing" <<
-        std::endl;
+        std::cout << "MLS radius option is only allowed if postprocessing" << std::endl;
         help ();
       }
     }
@@ -772,20 +762,17 @@ struct Options
     {
       if ( !stdThreshSet )
       {
-        std::cout << "std thresh option is required if postprocessing" <<
-        std::endl;
+        std::cout << "std thresh option is required if postprocessing" << std::endl;
         help ();
       }
       if ( !voxelSizeSet )
       {
-        std::cout << "voxel size option is required if postprocessing" <<
-        std::endl;
+        std::cout << "voxel size option is required if postprocessing" << std::endl;
         help ();
       }
       if ( !mlsRadiusSet )
       {
-        std::cout << "MLS radius option is required if postprocessing" <<
-        std::endl;
+        std::cout << "MLS radius option is required if postprocessing" << std::endl;
         help ();
       }
     }
@@ -836,7 +823,8 @@ main ( int argc, char * * argv )
       {
         list_index = 0;
       }
-      std::string filenameNew = tempFilename.replace ( list_index + 1, tempFilename.size () - list_index, filename );
+      std::string filenameNew = tempFilename.replace ( list_index + 1,
+        tempFilename.size () - list_index, filename );
       assert ( i < cameras.size () );
       if ( !cameras[i].IsValid () )
       {
@@ -880,8 +868,7 @@ main ( int argc, char * * argv )
     }
   }
   gettimeofday ( &toc, 0 );
-  std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
-  std::endl;
+  std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 
   if ( options.validateData )
   {
@@ -959,9 +946,10 @@ main ( int argc, char * * argv )
     gettimeofday ( &toc, 0 );
     std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
 
-    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree = boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
+    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree =
+      boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
     tree->setInputCloud ( reduced );
-    pcl::PointCloud <pcl::PointNormal>::Ptr normals (      new pcl::PointCloud<pcl::PointNormal>() );
+    pcl::PointCloud <pcl::PointNormal>::Ptr normals ( new pcl::PointCloud<pcl::PointNormal>() );
     pcl::MovingLeastSquares<pcl::PointXYZRGBNormal, pcl::PointNormal> normalEstimation;
     normalEstimation.setInputCloud ( reduced );
     normalEstimation.setOutputNormals ( normals );
@@ -978,7 +966,9 @@ main ( int argc, char * * argv )
     pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator k;
     pcl::PointCloud<pcl::PointNormal>::const_iterator j;
     pcl::PointCloud<pcl::PointXYZRGBNormal> final;
-    for ( i = cleaned.begin (), j = normals->begin (), k = reduced->begin (); i != cleaned.end (); ++i, ++j, ++k )
+    for ( i = cleaned.begin (), j = normals->begin (), k = reduced->begin ();
+          i != cleaned.end ();
+          ++i, ++j, ++k )
     {
       double dot = k->normal_x * j->normal_x + k->normal_y * j->normal_y + k->normal_z * j->normal_z;
       double length = j->normal_x * j->normal_x + j->normal_y * j->normal_y + j->normal_z * j->normal_z;
