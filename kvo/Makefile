@@ -1,5 +1,5 @@
 CXXFLAGS = -g
-INCLUDE = -I/home/kmatzen/local/include/eigen3
+INCLUDE = -I. -I/home/kmatzen/local/include/eigen3 -I/usr/local/include/eigen3
 
 all: libkvo.a
 
