@@ -22,6 +22,10 @@
 
 #include "ply_io.h"
 
+#include "kvo.h"
+
+#include <opencv2/opencv.hpp>
+
 #include "omp.h"
 
 std::set<std::pair<int, int> > LoadKeys ( const std::string & keypointFilename )
@@ -89,16 +93,21 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
     throw std::exception ();
   }
   depthInput.close ();
-  cv::Mat cameraMatrix ( 3, 3, CV_32FC1 );
-  cameraMatrix.at<float> ( 0, 0 ) = camera.GetF ();
-  cameraMatrix.at<float> ( 0, 1 ) = 0;
-  cameraMatrix.at<float> ( 0, 2 ) = ( float )colorImageDist.cols / 2;
-  cameraMatrix.at<float> ( 1, 0 ) = 0;
-  cameraMatrix.at<float> ( 1, 1 ) = camera.GetF ();
-  cameraMatrix.at<float> ( 1, 2 ) = ( float )colorImageDist.rows / 2;
-  cameraMatrix.at<float> ( 2, 0 ) = 0;
-  cameraMatrix.at<float> ( 2, 1 ) = 0;
-  cameraMatrix.at<float> ( 2, 2 ) = 1;
+  cv::Mat cameraMatrixCV ( 3, 3, CV_32FC1 );
+  cameraMatrixCV.at<float> ( 0, 0 ) = camera.GetF ();
+  cameraMatrixCV.at<float> ( 0, 1 ) = 0;
+  cameraMatrixCV.at<float> ( 0, 2 ) = ( float )colorImageDist.cols / 2;
+  cameraMatrixCV.at<float> ( 1, 0 ) = 0;
+  cameraMatrixCV.at<float> ( 1, 1 ) = camera.GetF ();
+  cameraMatrixCV.at<float> ( 1, 2 ) = ( float )colorImageDist.rows / 2;
+  cameraMatrixCV.at<float> ( 2, 0 ) = 0;
+  cameraMatrixCV.at<float> ( 2, 1 ) = 0;
+  cameraMatrixCV.at<float> ( 2, 2 ) = 1;
+
+  Eigen::Matrix3f cameraMatrix;
+  cameraMatrix << camera.GetF (), 0, ( float )colorImageDist.cols / 2,
+  0, camera.GetF (), ( float )colorImageDist.rows / 2,
+  0, 0, 1;
 
   cv::Mat distCoeffs ( 5, 1, CV_32FC1 );
   distCoeffs.at<float> ( 0, 0 ) = camera.GetK1 ();
@@ -109,7 +118,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
 
   cv::Mat colorImage, depthMap;
 
-  cv::undistort ( colorImageDist, colorImage, cameraMatrix, distCoeffs );
+  cv::undistort ( colorImageDist, colorImage, cameraMatrixCV, distCoeffs );
 
   std::set<std::pair<int, int> > keys = LoadKeys ( keypointFilename );
 
@@ -117,9 +126,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   //cv::undistort (depthMapDist, depthMap, cameraMatrix, distCoeffs);
 
   cv::Mat map1, map2;
-  cv::initUndistortRectifyMap ( cameraMatrix, distCoeffs, cv::Mat::eye ( 3,
+  cv::initUndistortRectifyMap ( cameraMatrixCV, distCoeffs, cv::Mat::eye ( 3,
       3,
-      CV_32FC1 ), cameraMatrix, depthMapDist.size (), CV_32FC1, map1, map2 );
+      CV_32FC1 ), cameraMatrixCV, depthMapDist.size (), CV_32FC1, map1, map2 );
   cv::remap ( depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST );
 
   for ( int j = 0; j < depthMap.rows; j += downscale )
@@ -133,30 +142,30 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       }
 
       depth = -0.018 * depth * depth + 1.0038 * depth + 0.005;
-      cv::Mat p ( cv::Vec3f ( ( float )i, ( float )depthMap.rows - 1.0 - ( float )j, 1 ) );
+      Eigen::Vector3f p ( ( float )i, ( float )depthMap.rows - 1.0 - ( float )j, 1 );
       p = depth * p;
 
-      p = cameraMatrix.inv () * p;
-      p.at<float>( 2, 0 ) *= -1;
+      p = cameraMatrix.inverse () * p;
+      p[2] *= -1;
 
-      const cv::Mat & R = camera.GetR ();
-      const cv::Mat & t = camera.GetT ();
+      const Eigen::Matrix3f & R = camera.GetR ();
+      const Eigen::Vector3f & t = camera.GetT ();
       p = p - t / scale;
-      p = R.t () * p;
+      p = R.transpose () * p;
 
-      cv::Mat p_cam ( cv::Vec3f ( 0, 0, 0 ) );
-      p_cam = cameraMatrix.inv () * p_cam;
-      p_cam.at<float>( 2, 0 ) *= -1;
+      Eigen::Vector3f p_cam ( 0, 0, 0 );
+      p_cam = cameraMatrix.inverse () * p_cam;
+      p_cam[2] *= -1;
 
       p_cam = p_cam - t / scale;
-      p_cam = R.t () * p_cam;
+      p_cam = R.transpose () * p_cam;
 
-      cv::Mat diff = p_cam - p;
+      Eigen::Vector3f diff = p_cam - p;
 
       pcl::PointXYZRGBNormal point;
-      point.x = p.at<float>( 0, 0 );
-      point.y = p.at<float>( 1, 0 );
-      point.z = p.at<float>( 2, 0 );
+      point.x = p[0];
+      point.y = p[1];
+      point.z = p[2];
 
       if ( isnan ( point.x ) || isnan ( point.y ) || isnan ( point.z ) )
       {
@@ -170,9 +179,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
         std::cout << "t: " << t << std::endl;
       }
 
-      point.normal_x = diff.at<float>( 0, 0 );
-      point.normal_y = diff.at<float>( 1, 0 );
-      point.normal_z = diff.at<float>( 2, 0 );
+      point.normal_x = diff[0];
+      point.normal_y = diff[1];
+      point.normal_z = diff[2];
 
       if ( keys.count ( std::make_pair ( j, i ) ) )
       {
@@ -262,9 +271,9 @@ generate_histogram (  const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud
 
 void
 compute_axis ( const std::vector<std::vector<float> > & histogram,
-               cv::Vec3f &                              v1,
-               cv::Vec3f &                              v2,
-               cv::Vec3f &                              v3 )
+               Eigen::Vector3f &                        v1,
+               Eigen::Vector3f &                        v2,
+               Eigen::Vector3f &                        v3 )
 {
   float max = 0;
   size_t theta_max = 0, phi_max = 0;
@@ -341,9 +350,9 @@ compute_axis ( const std::vector<std::vector<float> > & histogram,
 
 void
 project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
-                     const cv::Vec3f &                         v1,
-                     const cv::Vec3f &                         v2,
-                     const cv::Vec3f &                         v3 )
+                     const Eigen::Vector3f &                   v1,
+                     const Eigen::Vector3f &                   v2,
+                     const Eigen::Vector3f &                   v3 )
 {
   double projections [6] = { v1[1], -v1[1], v2[1], -v2[1], v3[1], -v3[1] };
   double maxValue = 0;
@@ -443,7 +452,7 @@ project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
 }
 
 void
-print_basis ( const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3 )
+print_basis ( const Eigen::Vector3f & v1, const Eigen::Vector3f & v2, const Eigen::Vector3f & v3 )
 {
   fprintf ( stderr, "%f %f %f\n", v1[0], v1[1], v1[2] );
   fprintf ( stderr, "%f %f %f\n", v2[0], v2[1], v2[2] );
@@ -457,9 +466,9 @@ print_basis ( const cv::Vec3f & v1, const cv::Vec3f & v2, const cv::Vec3f & v3 )
 void
 saveHistogram ( const std::string &                      filename,
                 const std::vector<std::vector<float> > & histogram,
-                const cv::Vec3f &                        v1,
-                const cv::Vec3f &                        v2,
-                const cv::Vec3f &                        v3 )
+                const Eigen::Vector3f &                  v1,
+                const Eigen::Vector3f &                  v2,
+                const Eigen::Vector3f &                  v3 )
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
   float max = 0;
@@ -504,13 +513,51 @@ void
 reorient ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud )
 {
   std::vector<std::vector<float> > histogram = generate_histogram ( pointCloud );
-  cv::Vec3f v1, v2, v3;
+  Eigen::Vector3f v1, v2, v3;
   compute_axis ( histogram, v1, v2, v3 );
   project_onto_basis ( pointCloud, v1, v2, v3 );
 #if 0
   print_basis ( v1, v2, v3 );
 #endif
   saveHistogram ( "histogram.ply", histogram, v1, v2, v3 );
+}
+
+void
+findAABB ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
+           Eigen::Vector3f &                               min,
+           Eigen::Vector3f &                               max )
+{
+  min = Eigen::Vector3f ( std::numeric_limits<float>::infinity (),
+    std::numeric_limits<float>::infinity (), std::numeric_limits<float>::infinity () );
+  max = Eigen::Vector3f ( -std::numeric_limits<float>::infinity (),
+    -std::numeric_limits<float>::infinity (), -std::numeric_limits<float>::infinity () );
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = points.begin (); i != points.end (); ++i )
+  {
+    if ( i->x < min[0] )
+    {
+      min[0] = i->x;
+    }
+    if ( i->y < min[1] )
+    {
+      min[1] = i->y;
+    }
+    if ( i->z < min[2] )
+    {
+      min[2] = i->z;
+    }
+    if ( i->x > max[0] )
+    {
+      max[0] = i->x;
+    }
+    if ( i->y > max[1] )
+    {
+      max[1] = i->y;
+    }
+    if ( i->z > max[2] )
+    {
+      max[2] = i->z;
+    }
+  }
 }
 
 struct Options
@@ -528,6 +575,7 @@ struct Options
   bool        postProcess;
   int         downscale;
   bool        validateData;
+  bool        voxelize;
 
   void
               help () const
@@ -545,6 +593,7 @@ struct Options
     std::cout << "  --mls_radius [double]" << std::endl;
     std::cout << "  --downscale [int]" << std::endl;
     std::cout << "  --validate_data" << std::endl;
+    std::cout << "  --voxelize" << std::endl;
     std::cout << "  --help" << std::endl;
     exit ( 1 );
   }
@@ -554,21 +603,22 @@ struct Options
     int c;
     int indexptr;
 
-    struct option longopts [14] =
-    { { "bundle",        required_argument, 0, 'b' },
-      { "list",          required_argument, 0, 'l' },
-      { "output",        required_argument, 0, 'o' },
-      { "keypoints",     no_argument,       0, 'k' },
-      { "depth_tuning",  required_argument, 0, 'd' },
-      { "input_cloud",   required_argument, 0, 'c' },
-      { "postprocess",   no_argument,       0, 'p' },
-      { "reprocess",     no_argument,       0, 'r' },
-      { "std_thresh",    required_argument, 0, 's' },
-      { "voxel_size",    required_argument, 0, 'v' },
-      { "mls_radius",    required_argument, 0, 'm' },
-      { "downscale",     required_argument, 0, 'x' },
-      { "validate_data", no_argument,       0, 'z' },
-      { 0,               0,                 0, 0   } };
+    struct option longopts [15] =
+    { { "bundle",        required_argument,          0,                 'b' },
+      { "list",          required_argument,          0,                 'l' },
+      { "output",        required_argument,          0,                 'o' },
+      { "keypoints",     no_argument,                0,                 'k' },
+      { "depth_tuning",  required_argument,          0,                 'd' },
+      { "input_cloud",   required_argument,          0,                 'c' },
+      { "postprocess",   no_argument,                0,                 'p' },
+      { "reprocess",     no_argument,                0,                 'r' },
+      { "std_thresh",    required_argument,          0,                 's' },
+      { "voxel_size",    required_argument,          0,                 'v' },
+      { "mls_radius",    required_argument,          0,                 'm' },
+      { "downscale",     required_argument,          0,                 'x' },
+      { "validate_data", no_argument,                0,                 'z' },
+      { "voxelize",      no_argument,                0,                 'e' },
+      { 0,               0,                          0,                 0   } };
 
     bool bundleFileSet = false;
     bool listFileSet = false;
@@ -584,6 +634,7 @@ struct Options
     postProcess = false;
     drawKeypoints = false;
     validateData = false;
+    voxelize = false;
 
     while ( ( c = getopt_long ( argc, argv, "b:l:o:kd:c:prs:v:m:", longopts, &indexptr ) ) != -1 )
     {
@@ -668,6 +719,9 @@ struct Options
           help ();
         }
         break;
+      case 'e':
+        voxelize = true;
+        break;
       default:
         std::cout << "Unknown option " << c << std::endl;
         help ();
@@ -687,11 +741,6 @@ struct Options
         std::cout << "list option is required if not reprocessing" << std::endl;
         help ();
       }
-      if ( inputCloudSet )
-      {
-        std::cout << "cloud option is only allowed if reprocessing" << std::endl;
-        help ();
-      }
       if ( !depthTuningSet )
       {
         depthTuning = 1.0;
@@ -703,34 +752,10 @@ struct Options
     }
     else
     {
-      if ( bundleFileSet )
-      {
-        std::cout << "bundle option is only allowed if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( listFileSet )
-      {
-        std::cout << "list option is only allowed if not reprocessing" << std::endl;
-        help ();
-      }
       if ( !inputCloudSet )
       {
         std::cout << "cloud option is required if reprocessing" << std::endl;
         help ();
-      }
-      if ( depthTuningSet )
-      {
-        std::cout << "depth tuning option is only allowed if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( drawKeypoints )
-      {
-        std::cout << "draw keypoints option is only allowed if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( downscaleSet )
-      {
-        std::cout << "downscale option is only allowed if not reprocessing" << std::endl;
       }
     }
 
@@ -740,25 +765,7 @@ struct Options
       help ();
     }
 
-    if ( !postProcess )
-    {
-      if ( stdThreshSet )
-      {
-        std::cout << "std thresh option is only allowed if postprocessing" << std::endl;
-        help ();
-      }
-      if ( voxelSizeSet )
-      {
-        std::cout << "voxel size option is only allowed if postprocessing" << std::endl;
-        help ();
-      }
-      if ( mlsRadiusSet )
-      {
-        std::cout << "MLS radius option is only allowed if postprocessing" << std::endl;
-        help ();
-      }
-    }
-    else
+    if ( postProcess )
     {
       if ( !stdThreshSet )
       {
@@ -776,8 +783,126 @@ struct Options
         help ();
       }
     }
+
+    if ( voxelize )
+    {
+      if ( !voxelSizeSet )
+      {
+        std::cout << "voxel size option is required if voxelizing" << std::endl;
+        help ();
+      }
+      if ( !bundleFileSet )
+      {
+        std::cout << "bundle option is required if not reprocessing" << std::endl;
+        help ();
+      }
+      if ( !listFileSet )
+      {
+        std::cout << "list option is required if not reprocessing" << std::endl;
+        help ();
+      }
+      if ( !depthTuningSet )
+      {
+        depthTuning = 1.0;
+      }
+      if ( !downscaleSet )
+      {
+        downscale = 1;
+      }
+    }
   }
 };
+
+Eigen::Vector3i
+material2Voxel ( const Eigen::Vector3f & material, float length, const Eigen::Vector3f & translation )
+{
+  Eigen::Vector3f result = 1.0 / length * ( material - translation );
+
+  return Eigen::Vector3i ( ( int )result [0], ( int )result[1], ( int )result [2] );
+}
+
+Eigen::Vector3f
+voxel2Material ( const Eigen::Vector3i & voxel, float length, const Eigen::Vector3f & translation )
+{
+  return length * ( ( voxel.cast<float>() + Eigen::Vector3f ( 0.5, 0.5, 0.5 ) ) ) + translation;
+}
+
+void
+carveVoxels ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
+              const BundleCamera &                            camera,
+              KVO &                                           voxels,
+              float                                           length,
+              const Eigen::Vector3f &                         translation,
+              const Eigen::Vector3i &                         dimensions )
+{
+  assert ( voxels.size ( 0 ) == dimensions[0] );
+  assert ( voxels.size ( 1 ) == dimensions[1] );
+  assert ( voxels.size ( 2 ) == dimensions[2] );
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = points.begin (); i != points.end (); ++i )
+  {
+    Eigen::Vector3f destination ( i->x, i->y, i->z );
+    Eigen::Vector3f direction = destination - camera.GetT ();
+    Eigen::Vector3f tDelta = direction.normalized ();
+    Eigen::Vector3i source = material2Voxel ( camera.GetT (), length, translation );
+    Eigen::Vector3i sink = material2Voxel ( destination, length, translation );
+    Eigen::Vector3f positionInGrid = 1.0 / length * ( camera.GetT () - translation );
+    Eigen::Vector3f destPositionInGrid = 1.0 / length * ( destination - translation );
+    Eigen::Vector3f tMax;
+    Eigen::Vector3i increment;
+    Eigen::Vector3i diff = source - sink;
+    int blocks = abs ( diff[0] ) + abs ( diff[1] ) + abs ( diff[2] );
+    for ( int i = 0; i < 3; ++i )
+    {
+      tDelta [i] = fabs ( 1.0 / tDelta[i] );
+      increment [i] = ( int )( direction [i] / fabs ( direction[i] ) );
+      int nextBarrier = increment [i] > 0 ? ( int )ceil ( positionInGrid [i] ) : ( int )floor (
+        positionInGrid [i] );
+      tMax [i] = fabs ( nextBarrier - positionInGrid [i] );
+    }
+
+    bool invisible = true;
+    float closest = std::numeric_limits<float>::infinity ();
+    while ( true )
+    {
+      int minIndex = 0;
+      float min = std::numeric_limits<float>::infinity ();
+      for ( int i = 0; i < 3; ++i )
+      {
+        if ( tMax [i] < min )
+        {
+          minIndex = i;
+          min = tMax[i];
+        }
+      }
+
+      source [minIndex] += increment [minIndex];
+      if ( source[minIndex] < 0 || source [minIndex] >= dimensions [minIndex] )
+      {
+        break;
+      }
+
+      tMax[minIndex] += tDelta[minIndex];
+
+      std::pair<uint64_t, uint64_t> & voxel = voxels [source [0]][source [1]][source [2]];
+      if ( invisible )
+      {
+#pragma omp atomic
+        ++voxel.first;
+        if ( !blocks )
+        {
+          invisible = false;
+        }
+        --blocks;
+      }
+#pragma omp atomic
+      ++voxel.second;
+    }
+    if ( invisible )
+    {
+      std::cout << "Missed, but the closest was " << closest << std::endl;
+    }
+  }
+}
 
 int
 main ( int argc, char * * argv )
@@ -901,6 +1026,78 @@ main ( int argc, char * * argv )
         std::cout << "Inf found in z" << std::endl;
       }
     }
+  }
+
+  if ( options.voxelize )
+  {
+    std::cout << "Beginning voxelization." << std::endl;
+    BundleFile file ( options.bundleFile );
+    const std::vector<BundleCamera> cameras = file.GetCameras ();
+    std::ifstream images ( options.listFile.c_str () );
+    if ( !images )
+    {
+      std::cout << "Failed to open list file" << std::endl;
+      options.help ();
+    }
+
+    Eigen::Vector3f min, max;
+    findAABB ( *combinedCloud, min, max );
+    Eigen::Vector3f width = max - min;
+    Eigen::Vector3i dimensions = ( 1.0 / options.voxelSize * width + Eigen::Vector3f ( 1, 1, 1 ) ).cast<int>();
+
+    KVO voxels ( dimensions [0], dimensions [1], dimensions [2], options.voxelSize, min );
+
+    std::vector<std::string> imageList;
+    while ( images ) // && count < maxCount)
+    {
+      std::string filename, line;
+      if ( !( images >> filename ) )
+      {
+        break;
+      }
+      imageList.push_back ( filename );
+      getline ( images, line );
+    }
+    images.close ();
+#pragma omp parallel for
+    for ( int i = 0; i < 5 /*(imageList.size ()*/; ++i )
+    {
+      const std::string & filename = imageList [i];
+      std::string tempFilename = options.listFile;
+      size_t list_index = options.listFile.find_last_of ( "/" );
+      if ( list_index == std::string::npos )
+      {
+        list_index = 0;
+      }
+      std::string filenameNew = tempFilename.replace ( list_index + 1,
+        tempFilename.size () - list_index, filename );
+      assert ( i < cameras.size () );
+      if ( !cameras[i].IsValid () )
+      {
+        continue;
+      }
+      size_t replacement = filenameNew.find ( "color.jpg" );
+      if ( replacement == std::string::npos )
+      {
+        continue;
+      }
+      std::cout << "Opening " << filenameNew << std::endl;
+      std::string filename2 ( filenameNew );
+      assert ( replacement + 9 <= filename2.size () );
+      filename2.replace ( replacement, 9, "depth.raw" );
+      std::string keyFilename ( filenameNew );
+      assert ( replacement + 9 <= keyFilename.size () );
+      keyFilename.replace ( replacement, 9, "color.ks" );
+      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
+        filenameNew,
+        filename2,
+        "",
+        cameras[i],
+        options.depthTuning,
+        options.downscale );
+      carveVoxels ( *points, cameras [i], voxels, options.voxelSize, min, dimensions );
+    }
+    voxels.save ( options.output + ".kvo" );
   }
 
   if ( options.postProcess )

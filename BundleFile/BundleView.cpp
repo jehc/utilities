@@ -2,7 +2,7 @@
 
 #include <exception>
 
-istream & operator>> (istream & in, BundleView & view)
+std::istream & operator>> (std::istream & in, BundleView & view)
 {
   if (!(in >> view.camera >> view.key >> view.x >> view.y))
   {
