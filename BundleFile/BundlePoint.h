@@ -2,31 +2,23 @@
 #define BUNDLE_POINT_H
 
 #include <vector>
-#include <opencv2/opencv.hpp>
+#include <Eigen/Dense>
 #include "BundleView.h"
 
 class BundlePoint
 {
-  cv::Mat position;
-  cv::Vec3b color;
+  Eigen::Vector3f position;
+  Eigen::Vector3i color;
   std::vector<BundleView> views;
-  friend istream & operator>> (istream &, BundlePoint &);
-  friend ostream & operator<< (ostream &, const BundlePoint &);
+  friend std::istream & operator>> (std::istream &, BundlePoint &);
+  friend std::ostream & operator<< (std::ostream &, const BundlePoint &);
 public:
-  BundlePoint ():position(cv::Mat(3,1,CV_32FC1)) { }
-  BundlePoint (const cv::Mat &, const cv::Vec3b &);
-  BundlePoint (const BundlePoint & p) { Copy(p); }
-  BundlePoint & operator= (const BundlePoint & p) { Copy(p); return *this; }
-  void Copy (const BundlePoint & p)
-  {
-    position = p.position.clone();
-    color = p.color;
-    views = p.views;
-  }
-  inline cv::Mat GetPosition() const { return position; }
-  inline cv::Vec3b GetColor() const { return color; }
+  BundlePoint () { }
+  BundlePoint (const Eigen::Vector3f &, const Eigen::Vector3i &);
+  inline Eigen::Vector3f GetPosition() const { return position; }
+  inline Eigen::Vector3i GetColor() const { return color; }
   inline const std::vector<BundleView> & GetViews() const { return views; }
-  inline void SetPosition (const cv::Mat & p) { position = p.clone(); }
+  inline void SetPosition (const Eigen::Vector3f & p) { position = p; }
 };
 
 #endif

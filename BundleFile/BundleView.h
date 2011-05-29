@@ -2,13 +2,12 @@
 #define BUNDLE_VIEW_H
 
 #include <istream>
-#include <opencv2/opencv.hpp>
 
 class BundleView
 {
   int camera, key;
   float x, y;
-  friend istream & operator>> (istream &, BundleView &);
+  friend std::istream & operator>> (std::istream &, BundleView &);
   public:
   inline int GetCamera() const { return camera; }
   inline float GetX() const { return x; }

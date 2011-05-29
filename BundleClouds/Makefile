@@ -1,11 +1,11 @@
 CXXFLAGS     = -g -fopenmp
 INCLUDE	     = -I/home/kmatzen/local/include/pcl-1.0 -I/home/kmatzen/local/include/eigen3
-LIBS         = -lBundleFile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lply 
+LIBS         = -lBundleFile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lply -lkvo
  
 all:	BundleClouds
 
 install:	BundleClouds
-		if [ ! -d ~/utilities/bin ]; then mkdir ~/utilities/bin; fi
+		mkdir -p ~/utilities/bin
 		cp BundleClouds ~/utilities/bin
 
 ply.o:	ply.c
