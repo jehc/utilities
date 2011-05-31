@@ -26,5 +26,5 @@ std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & operator [] ( int i 
 {
   return data [i];
 }
-size_t size ( int );
+size_t size ( int ) const;
 };
