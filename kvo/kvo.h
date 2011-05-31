@@ -1,5 +1,7 @@
 #include <vector>
 
+#include <stdint.h>
+
 #include <Eigen/Dense>
 
 class KVO
@@ -15,7 +17,9 @@ KVO ( int a, int b, int c, float voxel_size, const Eigen::Vector3f & translation
                                                                                                      uint64_t,
                                                                                                      uint64_t> > > (
                                                                              b,
-                                                                             std::vector<std::pair<uint64_t, uint64_t> > ( c ) ) ) )
+                                                                             std::vector<std::pair<uint64_t,
+                                                                                                   uint64_t> > (
+                                                                               c ) ) ) )
   , voxel_size ( voxel_size )
   , translation ( translation )
 {
@@ -26,5 +30,9 @@ std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & operator [] ( int i 
 {
   return data [i];
 }
-size_t size ( int ) const;
+float length () const
+{
+  return voxel_size;
+}
+size_t size ( int );
 };
