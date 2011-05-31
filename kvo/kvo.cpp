@@ -218,7 +218,7 @@ KVO::load ( const std::string & filename )
 }
 
 size_t
-KVO::size ( int d )
+KVO::size ( int d ) const
 {
   switch ( d )
   {
