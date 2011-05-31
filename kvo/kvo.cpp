@@ -226,6 +226,8 @@ KVO::load ( const std::string & filename )
     }
   }
   input.close ();
+
+  return voxels;
 }
 
 size_t
