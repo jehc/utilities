@@ -30,7 +30,7 @@ KVO::save ( const std::string & filename )
   output << "translation " << translation [0] << " " << translation [1] << " " << translation [2] <<
   std::endl;
 
-  output << "data " << sizeof ( uint64_t ) * 2 * size ( 0 ) * size ( 1 ) * size ( 2 ) << " ";
+  output << "data " << sizeof ( float ) * size ( 0 ) * size ( 1 ) * size ( 2 ) << " ";
 
   for ( size_t i = 0; i < data.size (); ++i )
   {
@@ -38,8 +38,7 @@ KVO::save ( const std::string & filename )
     {
       for ( size_t k = 0; k < data[i][j].size (); ++k )
       {
-        output.write ( ( char * )&data[i][j][k].first, sizeof ( uint64_t ) );
-        output.write ( ( char * )&data[i][j][k].second, sizeof ( uint64_t ) );
+        output.write ( ( char * )&data[i][j][k], sizeof ( float ) );
       }
     }
   }
@@ -201,9 +200,9 @@ KVO::load ( const std::string & filename )
     std::cout << "Failed to read bytes" << std::endl;
     exit ( 1 );
   }
-  if ( bytes != sizeof ( uint64_t ) * 2 * a * b * c )
+  if ( bytes != sizeof ( float ) * a * b * c )
   {
-    std::cout << "Expected data of size " << sizeof ( uint64_t ) * 2 * a * b * c << " but got " << bytes <<
+    std::cout << "Expected data of size " << sizeof ( float ) * a * b * c << " but got " << bytes <<
     std::endl;
     exit ( 1 );
   }
@@ -220,9 +219,8 @@ KVO::load ( const std::string & filename )
     {
       for ( size_t k = 0; k < c; ++k )
       {
-        std::pair<uint64_t, uint64_t> & voxel = voxels.data[i][j][k];
-        input.read ( ( char * )&voxel.first, sizeof ( uint64_t ) );
-        input.read ( ( char * )&voxel.second, sizeof ( uint64_t ) );
+        float & voxel = voxels.data[i][j][k];
+        input.read ( ( char * )&voxel, sizeof ( float ) );
       }
     }
   }
