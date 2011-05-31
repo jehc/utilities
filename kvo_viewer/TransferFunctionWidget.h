@@ -7,23 +7,23 @@
 
 class TransferFunctionWidget : public QDockWidget
 {
-  Q_OBJECT
+Q_OBJECT
 
-  HoverPoints * hoverPoints;
-  QVector<float> transferFunction;  
-  QColor color;
+HoverPoints * hoverPoints;
+QVector<float> transferFunction;
+QColor color;
 
-  void paintEvent(QPaintEvent *);
-  void contextMenuEvent (QContextMenuEvent *);
- 
+void paintEvent ( QPaintEvent * );
+void contextMenuEvent ( QContextMenuEvent * );
+
 public:
-  TransferFunctionWidget (QWidget *, const QColor &);
+TransferFunctionWidget ( QWidget *, const QColor & );
 
 public slots:
-  void transferFunctionChanged ();
+void transferFunctionChanged ();
 
 signals:
-  void transferFunctionChanged (const QVector<float> &);
+void transferFunctionChanged ( const QVector<float> & );
 };
 
 #endif

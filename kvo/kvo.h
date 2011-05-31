@@ -30,6 +30,9 @@ std::vector<std::vector<std::pair<uint64_t, uint64_t> > > & operator [] ( int i 
 {
   return data [i];
 }
-float length() const { return voxel_size; } 
+float length () const
+{
+  return voxel_size;
+}
 size_t size ( int );
 };

@@ -49,8 +49,8 @@ KVO::save ( const std::string & filename )
 KVO
 KVO::load ( const std::string & filename )
 {
-  union flipperf {float f; uint8_t b[4];} fromf, tof;
-  union flipperi {uint64_t i; uint8_t b[8];} fromi, toi;
+  union flipperf { float f; uint8_t b[4]; } fromf, tof;
+  union flipperi { uint64_t i; uint8_t b[8]; } fromi, toi;
   std::ifstream input ( filename.c_str () );
 
   if ( !input )
@@ -108,10 +108,11 @@ KVO::load ( const std::string & filename )
   {
     std::cout << "Floating point control value expected 12345.67890 but found " << controlf << std::endl;
     fromf.f = controlf;
-    for (int i = 0; i < 4; ++i)
+    for ( int i = 0; i < 4; ++i )
     {
       tof.b[i] = fromf.b[3 - i];
-      std::cout << "Expected byte: " << (unsigned int)expected.b[i] << " Actual byte: " << (unsigned int)fromf.b[i] << std::endl;
+      std::cout << "Expected byte: " << ( unsigned int )expected.b[i] << " Actual byte: " <<
+      ( unsigned int )fromf.b[i] << std::endl;
     }
     std::cout << "Flipping gets " << tof.f << std::endl;
     exit ( 1 );
