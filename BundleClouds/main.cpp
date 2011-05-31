@@ -904,6 +904,55 @@ carveVoxels ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
   }
 }
 
+void
+saveVoxelLayer (KVO & voxels, const std::string & filename)
+{
+  std::ofstream output (filename.c_str());
+  if (!output)
+  {
+    std::cout << "Failed to open " << filename << " for write" << std::endl;
+    exit (1);
+  }
+
+  std::vector<std::vector<std::pair<float,float> > > sum (voxels.size(0), std::vector<std::pair<float,float> > (voxels.size (2)));
+  for (size_t i = 0; i < voxels.size(0); ++i)
+  {
+    for (size_t j = 0; j < voxels.size (1); ++j)
+    {
+      for (size_t k = 0; k < voxels.size (2); ++k)
+      {
+        sum [i][k].first += voxels [i][j][k].first;
+        sum [i][k].second += voxels [i][j][k].second;
+      }
+    }
+  }
+  for (size_t i = 0; i < sum.size(); ++i) 
+  {
+    for (size_t j = 0; j < sum[i].size(); ++j)
+    {
+      output << sum[i][j].first << " ";
+    }
+    output << std::endl;
+  }
+  for (size_t i = 0; i < sum.size(); ++i)
+  {
+    for (size_t j = 0; j < sum[i].size(); ++j)
+    {
+      output << sum[i][j].second << " ";
+    }
+    output << std::endl;
+  }
+  for (size_t i = 0; i < sum.size(); ++i)
+  {
+    for (size_t j = 0; j < sum[i].size(); ++j)
+    {
+      output << sum[i][j].first/sum[i][j].second << " ";
+    }
+    output << std::endl;
+  }
+  output.close();
+}
+
 int
 main ( int argc, char * * argv )
 {
@@ -1060,7 +1109,7 @@ main ( int argc, char * * argv )
     }
     images.close ();
 #pragma omp parallel for
-    for ( int i = 0; i < 5 /*(imageList.size ()*/; ++i )
+    for ( int i = 0; i < imageList.size (); ++i )
     {
       const std::string & filename = imageList [i];
       std::string tempFilename = options.listFile;
@@ -1098,6 +1147,9 @@ main ( int argc, char * * argv )
       carveVoxels ( *points, cameras [i], voxels, options.voxelSize, min, dimensions );
     }
     voxels.save ( options.output + ".kvo" );
+#if 1
+    saveVoxelLayer (voxels, options.output + ".txt");
+#endif
   }
 
   if ( options.postProcess )
