@@ -28,6 +28,23 @@
 
 #include "omp.h"
 
+#define TIMED struct timeval tic, toc;
+#define TIME_BEGIN( msg ) std::cout << msg << std::endl; gettimeofday ( &tic, 0 );
+#define TIME_END gettimeofday ( &toc, \
+  0 ); std::cout << "Complete in " << toc.tv_sec - tic.tv_sec << " seconds." << std::endl;
+
+#define EIGEN_DONT_PARALLELIZE
+
+void
+printCommand ( int argc, char * * argv )
+{
+  for ( int i = 0; i < argc; ++i )
+  {
+    std::cout << argv [i] << " ";
+  }
+  std::cout << std::endl;
+}
+
 std::set<std::pair<int, int> > LoadKeys ( const std::string & keypointFilename )
 {
   std::ifstream input ( keypointFilename.c_str () );
@@ -58,12 +75,13 @@ std::set<std::pair<int, int> > LoadKeys ( const std::string & keypointFilename )
 }
 
 pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
-  const std::string &  colorFilename,
-  const std::string &  depthFilename,
-  const std::string &  keypointFilename,
-  const BundleCamera & camera,
-  float                scale,
-  int                  downscale )
+  const std::string &     colorFilename,
+  const std::string &     depthFilename,
+  const std::string &     keypointFilename,
+  const BundleCamera &    camera,
+  float                   scale,
+  int                     downscale,
+  const Eigen::Matrix3f & basis = Eigen::Matrix3f::Identity () )
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
@@ -151,15 +169,16 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       const Eigen::Matrix3f & R = camera.GetR ();
       const Eigen::Vector3f & t = camera.GetT ();
       p = p - t / scale;
-      p = R.transpose () * p;
+#pragma omp critical
+      p = basis * R.transpose () * p;
 
       Eigen::Vector3f p_cam ( 0, 0, 0 );
       p_cam = cameraMatrix.inverse () * p_cam;
       p_cam[2] *= -1;
 
       p_cam = p_cam - t / scale;
-      p_cam = R.transpose () * p_cam;
-
+#pragma omp critical
+      p_cam = basis * R.transpose () * p_cam;
       Eigen::Vector3f diff = p_cam - p;
 
       pcl::PointXYZRGBNormal point;
@@ -210,9 +229,9 @@ std::vector<std::vector<float> >
 generate_histogram (  const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud )
 {
   std::vector<std::vector<float> > histogram ( 30, std::vector<float> ( 120 ) );
-  for ( int i = 0; i < histogram.size (); ++i )
+  for ( size_t i = 0; i < histogram.size (); ++i )
   {
-    for ( int j = 0; j < histogram[i].size (); ++j )
+    for ( size_t j = 0; j < histogram[i].size (); ++j )
     {
       histogram[i][j] = 0;
     }
@@ -254,12 +273,11 @@ generate_histogram (  const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud
     assert ( phi < 120 && theta < 30 && theta >= 0 && phi >= 0 );
     histogram[theta][phi]++;
   }
-  for ( int i = 0; i < histogram.size (); ++i )
+  for ( size_t i = 0; i < histogram.size (); ++i )
   {
-    for ( int j = 0; j < histogram[i].size (); ++j )
+    for ( size_t j = 0; j < histogram[i].size (); ++j )
     {
       double theta_0 = M_PI * i / 60;
-      double phi_0 = M_PI * j / 60;
       double delta_phi = M_PI / 60;
       double delta_theta = M_PI / 60;
       double normalization = delta_phi * ( cos ( theta_0 ) - cos ( theta_0 + delta_theta ) );
@@ -269,12 +287,10 @@ generate_histogram (  const pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud
   return histogram;
 }
 
-void
-compute_axis ( const std::vector<std::vector<float> > & histogram,
-               Eigen::Vector3f &                        v1,
-               Eigen::Vector3f &                        v2,
-               Eigen::Vector3f &                        v3 )
+Eigen::Matrix3f
+compute_axis ( const std::vector<std::vector<float> > & histogram )
 {
+  Eigen::Matrix3f basis;
   float max = 0;
   size_t theta_max = 0, phi_max = 0;
 
@@ -290,13 +306,14 @@ compute_axis ( const std::vector<std::vector<float> > & histogram,
       }
     }
   }
-  v1[0] = sin ( M_PI * theta_max / 60 ) * cos ( M_PI * phi_max / 60 );
-  v1[1] = sin ( M_PI * theta_max / 60 ) * sin ( M_PI * phi_max / 60 );
-  v1[2] = cos ( M_PI * theta_max / 60 );
-  double norm = sqrt ( v1[0] * v1[0] + v1[1] * v1[1] + v1[2] * v1[2] );
+  basis ( 0, 0 ) = sin ( M_PI * theta_max / 60 ) * cos ( M_PI * phi_max / 60 );
+  basis ( 0, 1 ) = sin ( M_PI * theta_max / 60 ) * sin ( M_PI * phi_max / 60 );
+  basis ( 0, 2 ) = cos ( M_PI * theta_max / 60 );
+  double norm = sqrt ( basis ( 0, 0 ) * basis ( 0, 0 ) + basis ( 0, 1 ) * basis ( 0, 1 ) + basis ( 0,
+      2 ) * basis ( 0, 2 ) );
   for ( int i = 0; i < 3; ++i )
   {
-    v1[i] /= norm;
+    basis ( 0, i ) /= norm;
   }
   max = 0;
   const float slack = 0.06;
@@ -312,13 +329,13 @@ compute_axis ( const std::vector<std::vector<float> > & histogram,
       ytemp /= norm;
       ztemp /= norm;
 
-      double dot = xtemp * v1[0] + ytemp * v1[1] + ztemp * v1[2];
+      double dot = xtemp * basis ( 0, 0 ) + ytemp * basis ( 0, 1 ) + ztemp * basis ( 0, 2 );
       if ( dot > -slack && dot < slack && histogram[i][j] >= max )
       {
         max = histogram[i][j];
-        v2[0] = xtemp;
-        v2[1] = ytemp;
-        v2[2] = ztemp;
+        basis ( 1, 0 ) = xtemp;
+        basis ( 1, 1 ) = ytemp;
+        basis ( 1, 2 ) = ztemp;
       }
     }
   }
@@ -335,26 +352,20 @@ compute_axis ( const std::vector<std::vector<float> > & histogram,
       ytemp /= norm;
       ztemp /= norm;
 
-      double dot1 = xtemp * v1[0] + ytemp * v1[1] + ztemp * v1[2];
-      double dot2 = xtemp * v2[0] + ytemp * v2[1] + ztemp * v2[2];
+      double dot1 = xtemp * basis ( 0, 0 ) + ytemp * basis ( 0, 1 ) + ztemp * basis ( 0, 2 );
+      double dot2 = xtemp * basis ( 1, 0 ) + ytemp * basis ( 1, 1 ) + ztemp * basis ( 1, 2 );
       if ( dot1 > -slack && dot1 < slack && dot2 > -slack && dot2 < slack && histogram[i][j] >= max )
       {
         max = histogram[i][j];
-        v3[0] = xtemp;
-        v3[1] = ytemp;
-        v3[2] = ztemp;
+        basis ( 2, 0 ) = xtemp;
+        basis ( 2, 1 ) = ytemp;
+        basis ( 2, 2 ) = ztemp;
       }
     }
   }
-}
 
-void
-project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
-                     const Eigen::Vector3f &                   v1,
-                     const Eigen::Vector3f &                   v2,
-                     const Eigen::Vector3f &                   v3 )
-{
-  double projections [6] = { v1[1], -v1[1], v2[1], -v2[1], v3[1], -v3[1] };
+  double projections [6] =
+  { basis ( 0, 1 ), -basis ( 0, 1 ), basis ( 1, 1 ), -basis ( 1, 1 ), basis ( 2, 1 ), -basis ( 2, 1 ) };
   double maxValue = 0;
   int maxIndex = 0;
 
@@ -366,109 +377,67 @@ project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
       maxIndex = i;
     }
   }
-  double y [3];
+  Eigen::Vector3f y;
   switch ( maxIndex )
   {
   case 0:
-    y[0] = 1;
-    y[1] = 0;
-    y[2] = 0;
+    y = Eigen::Vector3f ( 1, 0, 0 );
     break;
   case 1:
-    y[0] = -1;
-    y[1] = 0;
-    y[2] = 0;
+    y = Eigen::Vector3f ( -1, 0, 0 );
     break;
   case 2:
-    y[0] = 0;
-    y[1] = 1;
-    y[2] = 0;
+    y = Eigen::Vector3f ( 0, 1, 0 );
     break;
   case 3:
-    y[0] = 0;
-    y[1] = -1;
-    y[2] = 0;
+    y = Eigen::Vector3f ( 0, -1, 0 );
     break;
   case 4:
-    y[0] = 0;
-    y[1] = 0;
-    y[2] = 1;
+    y = Eigen::Vector3f ( 0, 0, 1 );
     break;
   case 5:
-    y[0] = 0;
-    y[1] = 0;
-    y[2] = -1;
+    y = Eigen::Vector3f ( 0, 0, -1 );
     break;
   }
-  double up[3] = { 0, 1, 0 };
-  double axis[3] = { y[2] * up[1] - y[1] * up[2], y[0] * up[2] - y[2] * up[0], y[1] * up[0] - y[0] * up[1] };
-  double angle = acos ( y[0] * up[0] + y[1] * up[1] + y[2] * up[2] );
-  double R [9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+  Eigen::Vector3f up ( 0, 1, 0 );
+  Eigen::Vector3f axis = y.cross ( up );
+  double angle = acos ( y.dot ( up ) );
+  Eigen::Matrix3f Ex;
+  Ex << 0, -axis[2], axis[1],
+  axis[2], 0, -axis[0],
+  -axis[1], axis[0], 0;
+  Eigen::Matrix3f R = cos ( angle ) * Eigen::Matrix3f::Identity () +
+                      ( 1 - cos ( angle ) ) * axis * axis.transpose () + sin ( angle ) * Ex;
 
-#if 1
-  R[0] = cos ( angle );
-  R[4] = cos ( angle );
-  R[8] = cos ( angle );
+  basis = R * basis;
+  return basis;
+}
 
-  double E[9] = { axis[0] * axis[0], axis[0] * axis[1], axis[0] * axis[2],
-                  axis[1] * axis[0], axis[1] * axis[1], axis[1] * axis[2],
-                  axis[2] * axis[0], axis[2] * axis[1], axis[2] * axis[2] };
-  for ( int i = 0; i < 9; ++i )
-  {
-    R[i] += ( 1 - cos ( angle ) ) * E[i];
-  }
-  R[1] -= sin ( angle ) * axis[2];
-  R[2] += sin ( angle ) * axis[1];
-  R[3] += sin ( angle ) * axis[2];
-  R[5] -= sin ( angle ) * axis[0];
-  R[6] -= sin ( angle ) * axis[1];
-  R[7] += sin ( angle ) * axis[0];
-#endif
-
+void
+project_onto_basis ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud,
+                     const Eigen::Matrix3f &                   basis )
+{
   for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator i = pointCloud.begin ();
         i != pointCloud.end ();
         ++i )
   {
-    double x, y, z, tempx, tempy, tempz;
-    tempx = v1[0] * i->normal_x + v1[1] * i->normal_y + v1[2] * i->normal_z;
-    tempy = v2[0] * i->normal_x + v2[1] * i->normal_y + v2[2] * i->normal_z;
-    tempz = v3[0] * i->normal_x + v3[1] * i->normal_y + v3[2] * i->normal_z;
-    x = R[0] * tempx + R[3] * tempy + R[6] * tempz;
-    y = R[1] * tempx + R[4] * tempy + R[7] * tempz;
-    z = R[2] * tempx + R[5] * tempy + R[8] * tempz;
-    i->normal_x = x;
-    i->normal_y = y;
-    i->normal_z = z;
-    tempx = v1[0] * i->x + v1[1] * i->y + v1[2] * i->z;
-    tempy = v2[0] * i->x + v2[1] * i->y + v2[2] * i->z;
-    tempz = v3[0] * i->x + v3[1] * i->y + v3[2] * i->z;
-    x = R[0] * tempx + R[3] * tempy + R[6] * tempz;
-    y = R[1] * tempx + R[4] * tempy + R[7] * tempz;
-    z = R[2] * tempx + R[5] * tempy + R[8] * tempz;
-    i->x = x;
-    i->y = y;
-    i->z = z;
+    Eigen::Vector3f normal ( i->normal_x, i->normal_y, i->normal_z );
+    normal = basis * normal;
+    i->normal_x = normal [0];
+    i->normal_y = normal [1];
+    i->normal_z = normal [2];
+    Eigen::Vector3f point ( i->x, i->y, i->z );
+    point = basis * point;
+    i->x = point [0];
+    i->y = point [1];
+    i->z = point [2];
   }
-}
-
-void
-print_basis ( const Eigen::Vector3f & v1, const Eigen::Vector3f & v2, const Eigen::Vector3f & v3 )
-{
-  fprintf ( stderr, "%f %f %f\n", v1[0], v1[1], v1[2] );
-  fprintf ( stderr, "%f %f %f\n", v2[0], v2[1], v2[2] );
-  fprintf ( stderr, "%f %f %f\n", v3[0], v3[1], v3[2] );
-  double angle1 = 180 * acos ( v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2] ) / M_PI;
-  double angle2 = 180 * acos ( v2[0] * v3[0] + v2[1] * v3[1] + v2[2] * v3[2] ) / M_PI;
-  double angle3 = 180 * acos ( v3[0] * v1[0] + v3[1] * v1[1] + v3[2] * v1[2] ) / M_PI;
-  fprintf ( stderr, "%lf %lf %lf\n", angle1, angle2, angle3 );
 }
 
 void
 saveHistogram ( const std::string &                      filename,
                 const std::vector<std::vector<float> > & histogram,
-                const Eigen::Vector3f &                  v1,
-                const Eigen::Vector3f &                  v2,
-                const Eigen::Vector3f &                  v3 )
+                const Eigen::Matrix3f &                  basis )
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
   float max = 0;
@@ -505,25 +474,26 @@ saveHistogram ( const std::string &                      filename,
       cloud.push_back ( point );
     }
   }
-  project_onto_basis ( cloud, v1, v2, v3 );
+  project_onto_basis ( cloud, basis );
   savePlyFile ( filename, cloud );
 }
 
-void
+Eigen::Matrix3f
 reorient ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud )
 {
   std::vector<std::vector<float> > histogram = generate_histogram ( pointCloud );
-  Eigen::Vector3f v1, v2, v3;
-  compute_axis ( histogram, v1, v2, v3 );
-  project_onto_basis ( pointCloud, v1, v2, v3 );
-#if 0
-  print_basis ( v1, v2, v3 );
-#endif
-  saveHistogram ( "histogram.ply", histogram, v1, v2, v3 );
+  Eigen::Matrix3f basis = compute_axis ( histogram );
+  project_onto_basis ( pointCloud, basis );
+  saveHistogram ( "/home/kmatzen/NOBACKUP/histogram.ply", histogram, basis );
+
+  return basis;
 }
 
 void
 findAABB ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
+           const Eigen::Matrix3f &                         basis,
+           const std::vector<BundleCamera> &               cameras,
+           float                                           scale,
            Eigen::Vector3f &                               min,
            Eigen::Vector3f &                               max )
 {
@@ -556,6 +526,25 @@ findAABB ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
     if ( i->z > max[2] )
     {
       max[2] = i->z;
+    }
+  }
+
+  for ( size_t i = 0; i < cameras.size (); ++i )
+  {
+    if ( cameras[i].IsValid () )
+    {
+      Eigen::Vector3f position = -basis * cameras[i].GetR ().transpose () * cameras[i].GetT () / scale;
+      for ( int j = 0; j < 3; ++j )
+      {
+        if ( max [j] < position [j] )
+        {
+          max[j] = position [j];
+        }
+        if ( min[j] > position [j] )
+        {
+          min[j] = position [j];
+        }
+      }
     }
   }
 }
@@ -604,21 +593,17 @@ struct Options
     int indexptr;
 
     struct option longopts [15] =
-    { { "bundle",        required_argument,          0,                 'b' },
-      { "list",          required_argument,          0,                 'l' },
-      { "output",        required_argument,          0,                 'o' },
-      { "keypoints",     no_argument,                0,                 'k' },
-      { "depth_tuning",  required_argument,          0,                 'd' },
-      { "input_cloud",   required_argument,          0,                 'c' },
-      { "postprocess",   no_argument,                0,                 'p' },
-      { "reprocess",     no_argument,                0,                 'r' },
-      { "std_thresh",    required_argument,          0,                 's' },
-      { "voxel_size",    required_argument,          0,                 'v' },
-      { "mls_radius",    required_argument,          0,                 'm' },
-      { "downscale",     required_argument,          0,                 'x' },
-      { "validate_data", no_argument,                0,                 'z' },
-      { "voxelize",      no_argument,                0,                 'e' },
-      { 0,               0,                          0,                 0   } };
+    { { "bundle",       required_argument,         0,                         'b'                                         },
+      { "list",         required_argument,         0,                         'l'                                         },
+      { "output",       required_argument,         0,                         'o'                                         },
+      { "keypoints",    no_argument,               0,                         'k'                                         },
+      { "depth_tuning", required_argument,         0,                         'd'                                         },
+      { "input_cloud",  required_argument,         0,                         'c'                                         },
+      { "std_thresh",   required_argument,         0,                         's'                                         },
+      { "voxel_size",   required_argument,         0,                         'v'                                         },
+      { "mls_radius",   required_argument,         0,                         'm'                                         },
+      { "downscale",    required_argument,         0,                         'x'                                         },
+      { 0,              0,                         0,                         0                                           } };
 
     bool bundleFileSet = false;
     bool listFileSet = false;
@@ -630,13 +615,9 @@ struct Options
     bool mlsRadiusSet = false;
     bool downscaleSet = false;
 
-    reprocess = false;
-    postProcess = false;
     drawKeypoints = false;
-    validateData = false;
-    voxelize = false;
 
-    while ( ( c = getopt_long ( argc, argv, "b:l:o:kd:c:prs:v:m:", longopts, &indexptr ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:l:o:kd:c:s:v:m:x:", longopts, &indexptr ) ) != -1 )
     {
       std::stringstream ss;
       switch ( c )
@@ -656,9 +637,6 @@ struct Options
       case 'k':
         drawKeypoints = true;
         break;
-      case 'z':
-        validateData = true;
-        break;
       case 'd':
         depthTuningSet = true;
         ss << optarg;
@@ -672,12 +650,6 @@ struct Options
       case 'c':
         inputCloudSet = true;
         inputCloud = std::string ( optarg );
-        break;
-      case 'p':
-        postProcess = true;
-        break;
-      case 'r':
-        reprocess = true;
         break;
       case 's':
         stdThreshSet = true;
@@ -719,9 +691,6 @@ struct Options
           help ();
         }
         break;
-      case 'e':
-        voxelize = true;
-        break;
       default:
         std::cout << "Unknown option " << c << std::endl;
         help ();
@@ -729,34 +698,23 @@ struct Options
       }
     }
 
-    if ( !reprocess )
+    if ( !bundleFileSet )
     {
-      if ( !bundleFileSet )
-      {
-        std::cout << "bundle option is required if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( !listFileSet )
-      {
-        std::cout << "list option is required if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( !depthTuningSet )
-      {
-        depthTuning = 1.0;
-      }
-      if ( !downscaleSet )
-      {
-        downscale = 1;
-      }
+      std::cout << "bundle option is required" << std::endl;
+      help ();
     }
-    else
+    if ( !listFileSet )
     {
-      if ( !inputCloudSet )
-      {
-        std::cout << "cloud option is required if reprocessing" << std::endl;
-        help ();
-      }
+      std::cout << "list option is required" << std::endl;
+      help ();
+    }
+    if ( !depthTuningSet )
+    {
+      depthTuning = 1.0;
+    }
+    if ( !downscaleSet )
+    {
+      downscale = 1;
     }
 
     if ( !outputSet )
@@ -765,58 +723,34 @@ struct Options
       help ();
     }
 
-    if ( postProcess )
+    if ( !stdThreshSet )
     {
-      if ( !stdThreshSet )
-      {
-        std::cout << "std thresh option is required if postprocessing" << std::endl;
-        help ();
-      }
-      if ( !voxelSizeSet )
-      {
-        std::cout << "voxel size option is required if postprocessing" << std::endl;
-        help ();
-      }
-      if ( !mlsRadiusSet )
-      {
-        std::cout << "MLS radius option is required if postprocessing" << std::endl;
-        help ();
-      }
+      std::cout << "std thresh option is required" << std::endl;
+      help ();
+    }
+    if ( !voxelSizeSet )
+    {
+      std::cout << "voxel size option is required" << std::endl;
+      help ();
+    }
+    if ( !mlsRadiusSet )
+    {
+      std::cout << "MLS radius option is required" << std::endl;
+      help ();
     }
 
-    if ( voxelize )
+    if ( !voxelSizeSet )
     {
-      if ( !voxelSizeSet )
-      {
-        std::cout << "voxel size option is required if voxelizing" << std::endl;
-        help ();
-      }
-      if ( !bundleFileSet )
-      {
-        std::cout << "bundle option is required if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( !listFileSet )
-      {
-        std::cout << "list option is required if not reprocessing" << std::endl;
-        help ();
-      }
-      if ( !depthTuningSet )
-      {
-        depthTuning = 1.0;
-      }
-      if ( !downscaleSet )
-      {
-        downscale = 1;
-      }
+      std::cout << "voxel size option is required" << std::endl;
+      help ();
     }
   }
 };
 
 Eigen::Vector3i
-material2Voxel ( const Eigen::Vector3f & material, float length, const Eigen::Vector3f & translation )
+material2Voxel ( const Eigen::Vector3d & material, float length, const Eigen::Vector3d & translation )
 {
-  Eigen::Vector3f result = 1.0 / length * ( material - translation );
+  Eigen::Vector3d result = 1.0 / length * ( material - translation );
 
   return Eigen::Vector3i ( ( int )result [0], ( int )result[1], ( int )result [2] );
 }
@@ -828,29 +762,43 @@ voxel2Material ( const Eigen::Vector3i & voxel, float length, const Eigen::Vecto
 }
 
 void
-carveVoxels ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
-              const BundleCamera &                            camera,
-              KVO &                                           voxels,
-              float                                           length,
-              const Eigen::Vector3f &                         translation,
-              const Eigen::Vector3i &                         dimensions )
+carveVoxels ( const pcl::PointCloud<pcl::PointXYZRGBNormal> &                 points,
+              const Eigen::Matrix3f &                                         basis,
+              const BundleCamera &                                            camera,
+              float                                                           scale,
+              std::vector<std::vector<std::vector<std::pair<uint64_t,
+                                                            uint64_t> > > > & voxels,
+              float                                                           length,
+              const Eigen::Vector3f &                                         translation,
+              const Eigen::Vector3i &                                         dimensions )
 {
-  assert ( voxels.size ( 0 ) == dimensions[0] );
-  assert ( voxels.size ( 1 ) == dimensions[1] );
-  assert ( voxels.size ( 2 ) == dimensions[2] );
+  assert ( ( int )voxels.size ( ) == dimensions[0] );
+  assert ( ( int )voxels[0].size ( ) == dimensions[1] );
+  assert ( ( int )voxels[0][0].size ( ) == dimensions[2] );
   for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = points.begin (); i != points.end (); ++i )
   {
-    Eigen::Vector3f destination ( i->x, i->y, i->z );
-    Eigen::Vector3f direction = destination - camera.GetT ();
-    Eigen::Vector3f tDelta = direction.normalized ();
-    Eigen::Vector3i source = material2Voxel ( camera.GetT (), length, translation );
-    Eigen::Vector3i sink = material2Voxel ( destination, length, translation );
-    Eigen::Vector3f positionInGrid = 1.0 / length * ( camera.GetT () - translation );
-    Eigen::Vector3f destPositionInGrid = 1.0 / length * ( destination - translation );
-    Eigen::Vector3f tMax;
+    Eigen::Vector3d cameraPosition;
+#pragma omp critical
+    cameraPosition = -basis.cast<double>() * camera.GetR ().transpose ().cast<double>() *
+                     camera.GetT ().cast<double>() / scale;
+    Eigen::Vector3d destination ( i->x, i->y, i->z );
+    Eigen::Vector3d direction = destination - cameraPosition;
+    Eigen::Vector3d tDelta = direction.normalized ();
+    Eigen::Vector3i source = material2Voxel ( cameraPosition, ( double )length, translation.cast<double>() );
+    Eigen::Vector3i sink = material2Voxel ( destination, ( double )length, translation.cast<double>() );
+    Eigen::Vector3d positionInGrid = 1.0 / length * ( cameraPosition - translation.cast<double>() );
+    Eigen::Vector3d destPositionInGrid = 1.0 / length * ( destination - translation.cast<double>() );
+    Eigen::Vector3d tMax;
     Eigen::Vector3i increment;
-    Eigen::Vector3i diff = source - sink;
-    int blocks = abs ( diff[0] ) + abs ( diff[1] ) + abs ( diff[2] );
+    Eigen::Vector3d diff = destPositionInGrid - positionInGrid;
+    assert (
+      source[0] >= 0 && source [1] >= 0 && source [2] >= 0 && source [0] < dimensions [0] && source [1] <
+      dimensions [1] && source [2] < dimensions [2] );
+    if ( sink[0] < 0 && sink [1] < 0 && sink [2] < 0 && sink [0] >= dimensions [0] && sink [1] >=
+         dimensions [1] && sink [2] >= dimensions [2] )
+    {
+      continue;
+    }
     for ( int i = 0; i < 3; ++i )
     {
       tDelta [i] = fabs ( 1.0 / tDelta[i] );
@@ -861,11 +809,11 @@ carveVoxels ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
     }
 
     bool invisible = true;
-    float closest = std::numeric_limits<float>::infinity ();
+    double closest = std::numeric_limits<double>::infinity ();
     while ( true )
     {
       int minIndex = 0;
-      float min = std::numeric_limits<float>::infinity ();
+      double min = std::numeric_limits<double>::infinity ();
       for ( int i = 0; i < 3; ++i )
       {
         if ( tMax [i] < min )
@@ -883,389 +831,324 @@ carveVoxels ( const pcl::PointCloud<pcl::PointXYZRGBNormal> & points,
 
       tMax[minIndex] += tDelta[minIndex];
 
+      assert (
+        source [0] >= 0 && source [1] >= 0 && source [2] >= 0 && source [0] < ( int )voxels.size () &&
+        source [1] < ( int )voxels[0].size () && source [2] < ( int )voxels[0][0].size () );
       std::pair<uint64_t, uint64_t> & voxel = voxels [source [0]][source [1]][source [2]];
       if ( invisible )
       {
 #pragma omp atomic
         ++voxel.first;
-        if ( !blocks )
+        double dist = ( sink - source ).cast<double>().norm ();
+        if ( dist < closest )
+        {
+          closest = dist;
+        }
+        if ( dist < 1.42 )
         {
           invisible = false;
         }
-        --blocks;
       }
 #pragma omp atomic
       ++voxel.second;
     }
     if ( invisible )
     {
-      std::cout << "Missed, but the closest was " << closest << std::endl;
-    }
-  }
-}
-
-void
-saveVoxelLayer (KVO & voxels, const std::string & filename)
-{
-  std::ofstream output (filename.c_str());
-  if (!output)
-  {
-    std::cout << "Failed to open " << filename << " for write" << std::endl;
-    exit (1);
-  }
-
-  std::vector<std::vector<std::pair<float,float> > > sum (voxels.size(0), std::vector<std::pair<float,float> > (voxels.size (2)));
-  for (size_t i = 0; i < voxels.size(0); ++i)
-  {
-    for (size_t j = 0; j < voxels.size (1); ++j)
-    {
-      for (size_t k = 0; k < voxels.size (2); ++k)
+#pragma omp critical
       {
-        sum [i][k].first += voxels [i][j][k].first;
-        sum [i][k].second += voxels [i][j][k].second;
+        std::cout << "Missed, but the closest was " << closest << std::endl;
+        std::cout << "Dimensions " << std::endl;
+        std::cout << dimensions << std::endl;
+        std::cout << "Source " << std::endl;
+        std::cout << cameraPosition << std::endl;
+        std::cout << "Destination " << std::endl;
+        std::cout << destination << std::endl;
+        std::cout << "Source voxel " << std::endl;
+        std::cout << positionInGrid << std::endl;
+        std::cout << "Destination voxel " << std::endl;
+        std::cout << destPositionInGrid << std::endl;
+//      exit (1);
       }
     }
   }
-  for (size_t i = 0; i < sum.size(); ++i) 
-  {
-    for (size_t j = 0; j < sum[i].size(); ++j)
-    {
-      output << sum[i][j].first << " ";
-    }
-    output << std::endl;
-  }
-  for (size_t i = 0; i < sum.size(); ++i)
-  {
-    for (size_t j = 0; j < sum[i].size(); ++j)
-    {
-      output << sum[i][j].second << " ";
-    }
-    output << std::endl;
-  }
-  for (size_t i = 0; i < sum.size(); ++i)
-  {
-    for (size_t j = 0; j < sum[i].size(); ++j)
-    {
-      output << sum[i][j].first/sum[i][j].second << " ";
-    }
-    output << std::endl;
-  }
-  output.close();
 }
 
 int
 main ( int argc, char * * argv )
 {
-  struct timeval tic, toc;
+  TIMED
 
+  printCommand ( argc, argv );
+
+  TIME_BEGIN ( "Loading options" )
   Options options ( argc, argv );
+  TIME_END
 
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr combinedCloud ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
-  std::cout << "Loading data" << std::endl;
-  gettimeofday ( &tic, 0 );
-  if ( !options.reprocess )
-  {
-    BundleFile file ( options.bundleFile );
-    const std::vector<BundleCamera> cameras = file.GetCameras ();
-    std::ifstream images ( options.listFile.c_str () );
-    if ( !images )
-    {
-      std::cout << "Failed to open list file" << std::endl;
-      options.help ();
-    }
+  TIME_BEGIN ( "Loading bundle file" )
+  BundleFile file ( options.bundleFile );
+  TIME_END
 
-    std::vector<std::string> imageList;
-    while ( images ) // && count < maxCount)
+  const std::vector<BundleCamera> cameras = file.GetCameras ();
+
+  std::ifstream images ( options.listFile.c_str () );
+  if ( !images )
+  {
+    std::cout << "Failed to open list file" << std::endl;
+    options.help ();
+  }
+
+  TIME_BEGIN ( "Loading files from list" )
+  std::vector<std::string> imageList;
+  while ( images )
+  {
+    std::string filename, line;
+    if ( !( images >> filename ) )
     {
-      std::string filename, line;
-      if ( !( images >> filename ) )
-      {
-        break;
-      }
-      imageList.push_back ( filename );
-      getline ( images, line );
+      break;
     }
-    images.close ();
+    imageList.push_back ( filename );
+    getline ( images, line );
+  }
+  images.close ();
+  TIME_END
+
+  size_t list_index = options.listFile.find_last_of ( "/" );
+
+  TIME_BEGIN ( "Loading all poiht clouds" )
 #pragma omp parallel for
-    for ( int i = 0; i < imageList.size (); ++i )
+  for ( int i = 0; i < ( int )imageList.size (); ++i )
+  {
+    const std::string & filename = imageList [i];
+    std::string colorFilename = options.listFile;
+    if ( list_index == std::string::npos )
     {
-      const std::string & filename = imageList [i];
-      std::string tempFilename = options.listFile;
-      size_t list_index = options.listFile.find_last_of ( "/" );
-      if ( list_index == std::string::npos )
-      {
-        list_index = 0;
-      }
-      std::string filenameNew = tempFilename.replace ( list_index + 1,
-        tempFilename.size () - list_index, filename );
-      assert ( i < cameras.size () );
-      if ( !cameras[i].IsValid () )
-      {
-        continue;
-      }
-      size_t replacement = filenameNew.find ( "color.jpg" );
-      if ( replacement == std::string::npos )
-      {
-        continue;
-      }
-      std::cout << "Opening " << filenameNew << std::endl;
-      std::string filename2 ( filenameNew );
-      assert ( replacement + 9 <= filename2.size () );
-      filename2.replace ( replacement, 9, "depth.raw" );
-      std::string keyFilename ( filenameNew );
-      assert ( replacement + 9 <= keyFilename.size () );
-      keyFilename.replace ( replacement, 9, "color.ks" );
-      if ( !options.drawKeypoints )
-      {
-        keyFilename = "";
-      }
-      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
-        filenameNew,
-        filename2,
-        keyFilename,
-        cameras[i],
-        options.depthTuning,
-        options.downscale );
+      list_index = 0;
+    }
+    colorFilename.replace ( list_index + 1, colorFilename.size () - list_index, filename );
+    assert ( i < ( int )cameras.size () );
+    if ( !cameras[i].IsValid () )
+    {
+      continue;
+    }
+    size_t replacement = colorFilename.find ( "color.jpg" );
+    if ( replacement == std::string::npos )
+    {
+      continue;
+    }
 #pragma omp critical
-      {
-        *combinedCloud += *points;
-      }
+    {
+      std::cout << "Opening " << colorFilename << std::endl;
+    }
+    std::string depthFilename ( colorFilename );
+    assert ( replacement + 9 <= depthFilename.size () );
+    depthFilename.replace ( replacement, 9, "depth.raw" );
+    std::string keyFilename ( colorFilename );
+    assert ( replacement + 9 <= keyFilename.size () );
+    keyFilename.replace ( replacement, 9, "color.ks" );
+    if ( !options.drawKeypoints )
+    {
+      keyFilename = "";
+    }
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
+      colorFilename,
+      depthFilename,
+      keyFilename,
+      cameras[i],
+      options.depthTuning,
+      options.downscale );
+#pragma omp critical
+    {
+      *combinedCloud += *points;
     }
   }
-  else
+  TIME_END
+
+  TIME_BEGIN ( "Saving unprocessed ply" )
+  savePlyFile ( options.output + ".unprocessed.ply", *combinedCloud );
+  TIME_END
+
+  TIME_BEGIN ( "Validating data" )
+  for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = combinedCloud->begin ();
+        i != combinedCloud->end ();
+        ++i )
   {
-    if ( -1 == pcl::io::loadPCDFile ( options.inputCloud, *combinedCloud ) )
+    if ( isnan ( i->x ) )
     {
-      std::cout << "Failed to load cloud for reprocessing" << std::endl;
-      options.help ();
+      std::cout << "NaN found in x" << std::endl;
+    }
+    if ( isnan ( i->y ) )
+    {
+      std::cout << "NaN found in y" << std::endl;
+    }
+    if ( isnan ( i->z ) )
+    {
+      std::cout << "NaN found in z" << std::endl;
+    }
+    if ( isinf ( i->x ) )
+    {
+      std::cout << "Inf found in x" << std::endl;
+    }
+    if ( isinf ( i->y ) )
+    {
+      std::cout << "Inf found in y" << std::endl;
+    }
+    if ( isinf ( i->z ) )
+    {
+      std::cout << "Inf found in z" << std::endl;
     }
   }
-  gettimeofday ( &toc, 0 );
-  std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+  TIME_END
 
-  if ( options.validateData )
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr reduced ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
+
+  pcl::VoxelGrid<pcl::PointXYZRGBNormal> downsampler;
+  downsampler.setInputCloud ( combinedCloud );
+  downsampler.setLeafSize ( options.voxelSize, options.voxelSize, options.voxelSize );
+  std::cout << "Data size is " << combinedCloud->size () << std::endl;
+  TIME_BEGIN ( "Downsampling data with voxel grid" )
+  downsampler.filter ( *reduced );
+  TIME_END
+
+  TIME_BEGIN ( "Saving downsampled ply" )
+  savePlyFile ( options.output + ".downsampled.ply", *reduced );
+  TIME_END
+
+  pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree =
+    boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
+  tree->setInputCloud ( reduced );
+  pcl::PointCloud <pcl::PointNormal>::Ptr normals ( new pcl::PointCloud<pcl::PointNormal>() );
+  pcl::MovingLeastSquares<pcl::PointXYZRGBNormal, pcl::PointNormal> normalEstimation;
+  normalEstimation.setInputCloud ( reduced );
+  normalEstimation.setOutputNormals ( normals );
+  normalEstimation.setSearchRadius ( options.mlsRadius );
+  normalEstimation.setSearchMethod ( tree );
+  pcl::PointCloud<pcl::PointXYZRGBNormal> cleaned;
+  std::cout << "Data size is " << reduced->size () << std::endl;
+  TIME_BEGIN ( "Reconstructing normals with MLS" )
+  normalEstimation.reconstruct ( cleaned );
+  TIME_END
+
+  TIME_BEGIN ( "Putting together point cloud" )
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i;
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator k;
+  pcl::PointCloud<pcl::PointNormal>::const_iterator j;
+  pcl::PointCloud<pcl::PointXYZRGBNormal> final;
+  for ( i = cleaned.begin (), j = normals->begin (), k = reduced->begin ();
+        i != cleaned.end ();
+        ++i, ++j, ++k )
   {
-    for ( pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = combinedCloud->begin ();
-          i != combinedCloud->end ();
-          ++i )
+    double dot = k->normal_x * j->normal_x + k->normal_y * j->normal_y + k->normal_z * j->normal_z;
+    double length = j->normal_x * j->normal_x + j->normal_y * j->normal_y + j->normal_z * j->normal_z;
+    double flip = ( dot > 0 ) ? 1.0 / length : -1.0 / length;
+    if ( length == 0 )
     {
-      if ( isnan ( i->x ) )
-      {
-        std::cout << "NaN found in x" << std::endl;
-      }
-      if ( isnan ( i->y ) )
-      {
-        std::cout << "NaN found in y" << std::endl;
-      }
-      if ( isnan ( i->z ) )
-      {
-        std::cout << "NaN found in z" << std::endl;
-      }
-      if ( isinf ( i->x ) )
-      {
-        std::cout << "Inf found in x" << std::endl;
-      }
-      if ( isinf ( i->y ) )
-      {
-        std::cout << "Inf found in y" << std::endl;
-      }
-      if ( isinf ( i->z ) )
-      {
-        std::cout << "Inf found in z" << std::endl;
-      }
+      continue;
     }
+    pcl::PointXYZRGBNormal newPoint;
+    newPoint.normal_x = flip * j->normal_x;
+    newPoint.normal_y = flip * j->normal_y;
+    newPoint.normal_z = flip * j->normal_z;
+    newPoint.rgb = k->rgb;
+    newPoint.x = i->x;
+    newPoint.y = i->y;
+    newPoint.z = i->z;
+    final.push_back ( newPoint );
   }
+  TIME_END
 
-  if ( options.voxelize )
-  {
-    std::cout << "Beginning voxelization." << std::endl;
-    BundleFile file ( options.bundleFile );
-    const std::vector<BundleCamera> cameras = file.GetCameras ();
-    std::ifstream images ( options.listFile.c_str () );
-    if ( !images )
-    {
-      std::cout << "Failed to open list file" << std::endl;
-      options.help ();
-    }
+  TIME_BEGIN ( "Reorienting point cloud" )
+  Eigen::Matrix3f basis = reorient ( final );
+  TIME_END
 
-    Eigen::Vector3f min, max;
-    findAABB ( *combinedCloud, min, max );
-    Eigen::Vector3f width = max - min;
-    Eigen::Vector3i dimensions = ( 1.0 / options.voxelSize * width + Eigen::Vector3f ( 1, 1, 1 ) ).cast<int>();
+  std::cout << "Basis is " << std::endl;
+  std::cout << basis << std::endl;
+  std::cout << std::endl;
 
-    KVO voxels ( dimensions [0], dimensions [1], dimensions [2], options.voxelSize, min );
+  TIME_BEGIN ( "Saving ply" )
+  savePlyFile ( options.output + ".ply", final );
+  TIME_END
 
-    std::vector<std::string> imageList;
-    while ( images ) // && count < maxCount)
-    {
-      std::string filename, line;
-      if ( !( images >> filename ) )
-      {
-        break;
-      }
-      imageList.push_back ( filename );
-      getline ( images, line );
-    }
-    images.close ();
+  TIME_BEGIN ( "Saving pcd" )
+  pcl::io::savePCDFile ( options.output + ".pcd", final, true );
+  TIME_END
+
+  std::cout << "Beginning visibility voxelization." << std::endl;
+
+  Eigen::Vector3f min, max;
+
+  TIME_BEGIN ( "Finding AABB" )
+  findAABB ( final, basis, cameras, options.depthTuning, min, max );
+  TIME_END
+
+  std::cout << "AABB is " << std::endl;
+  std::cout << min << std::endl;
+  std::cout << "-" << std::endl;
+  std::cout << max << std::endl;
+  std::cout << std::endl;
+
+  Eigen::Vector3f width = max - min;
+  Eigen::Vector3i dimensions = ( 1.0 / options.voxelSize * width + Eigen::Vector3f ( 1, 1, 1 ) ).cast<int>();
+
+  KVO voxels ( dimensions [0], dimensions [1], dimensions [2], options.voxelSize, min );
+  std::vector<std::vector<std::vector<std::pair<uint64_t, uint64_t> > > > temp
+    ( voxels.size ( 0 ), std::vector<std::vector<std::pair<uint64_t, uint64_t> > > ( voxels.size (
+                                                                                       1 ),
+                                                                                     std::vector<std::pair<
+                                                                                                   uint64_t, uint64_t> > ( voxels.size ( 2 ) ) ) );
+
+  TIME_BEGIN ( "Visibility ray tracing" )
 #pragma omp parallel for
-    for ( int i = 0; i < imageList.size (); ++i )
-    {
-      const std::string & filename = imageList [i];
-      std::string tempFilename = options.listFile;
-      size_t list_index = options.listFile.find_last_of ( "/" );
-      if ( list_index == std::string::npos )
-      {
-        list_index = 0;
-      }
-      std::string filenameNew = tempFilename.replace ( list_index + 1,
-        tempFilename.size () - list_index, filename );
-      assert ( i < cameras.size () );
-      if ( !cameras[i].IsValid () )
-      {
-        continue;
-      }
-      size_t replacement = filenameNew.find ( "color.jpg" );
-      if ( replacement == std::string::npos )
-      {
-        continue;
-      }
-      std::cout << "Opening " << filenameNew << std::endl;
-      std::string filename2 ( filenameNew );
-      assert ( replacement + 9 <= filename2.size () );
-      filename2.replace ( replacement, 9, "depth.raw" );
-      std::string keyFilename ( filenameNew );
-      assert ( replacement + 9 <= keyFilename.size () );
-      keyFilename.replace ( replacement, 9, "color.ks" );
-      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
-        filenameNew,
-        filename2,
-        "",
-        cameras[i],
-        options.depthTuning,
-        options.downscale );
-      carveVoxels ( *points, cameras [i], voxels, options.voxelSize, min, dimensions );
-    }
-    voxels.save ( options.output + ".kvo" );
-#if 1
-    saveVoxelLayer (voxels, options.output + ".txt");
-#endif
-  }
-
-  if ( options.postProcess )
+  for ( int i = 0; i < ( int )imageList.size (); ++i )
   {
-#if 0
-    pcl::PointCloud<pcl::PointXYZRGBNormal> final;
-    const int desired = 10000000;
-    const float probability = ( float )desired / ( float )combinedCloud->size ();
-    for ( pcl::PointCloud<pcl::PointXYZRGB>::iterator i = combinedCloud->begin ();
-          i != combinedCloud->end ();
-          ++i )
+    const std::string & filename = imageList [i];
+    std::string colorFilename = options.listFile;
+    colorFilename.replace ( list_index + 1, colorFilename.size () - list_index, filename );
+    assert ( i < ( int )cameras.size () );
+    if ( !cameras[i].IsValid () )
     {
-      if ( ( float )rand () / ( ( float )RAND_MAX + 1 ) < probability )
-      {
-        pcl::PointXYZRGBNormal newPoint;
-        newPoint.x = i->x;
-        newPoint.y = i->y;
-        newPoint.z = i->z;
-        newPoint.rgb = i->rgb;
-        final.push_back ( newPoint );
-      }
+      continue;
     }
-#else
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr reduced ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
-
-/*    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGBNormal> outlierRemoval;
- *  outlierRemoval.setInputCloud (combinedCloud);
- *  outlierRemoval.setNegative (false);
- *  outlierRemoval.setStddevMulThresh(options.stdThresh);
- *  std::cout << "Statistical outlier removal on size " << combinedCloud->size() << std::flush;
- *  gettimeofday (&tic, 0);
- *  outlierRemoval.filter (*reduced);
- *  gettimeofday (&toc, 0);
- *  std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
- */
-    pcl::VoxelGrid<pcl::PointXYZRGBNormal> downsampler;
-    downsampler.setInputCloud ( combinedCloud );
-    downsampler.setLeafSize ( options.voxelSize, options.voxelSize, options.voxelSize );
-    std::cout << "Voxel grid downsampling on size " <<
-    combinedCloud->size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    downsampler.filter ( *reduced );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
-
-    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree =
-      boost::make_shared<pcl::KdTreeFLANN<pcl::PointXYZRGBNormal> > ();
-    tree->setInputCloud ( reduced );
-    pcl::PointCloud <pcl::PointNormal>::Ptr normals ( new pcl::PointCloud<pcl::PointNormal>() );
-    pcl::MovingLeastSquares<pcl::PointXYZRGBNormal, pcl::PointNormal> normalEstimation;
-    normalEstimation.setInputCloud ( reduced );
-    normalEstimation.setOutputNormals ( normals );
-    normalEstimation.setSearchRadius ( options.mlsRadius );
-    normalEstimation.setSearchMethod ( tree );
-    pcl::PointCloud<pcl::PointXYZRGBNormal> cleaned;
-    std::cout << "Moving least squares on size " << reduced->size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    normalEstimation.reconstruct ( cleaned );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
-
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i;
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator k;
-    pcl::PointCloud<pcl::PointNormal>::const_iterator j;
-    pcl::PointCloud<pcl::PointXYZRGBNormal> final;
-    for ( i = cleaned.begin (), j = normals->begin (), k = reduced->begin ();
-          i != cleaned.end ();
-          ++i, ++j, ++k )
+    size_t replacement = colorFilename.find ( "color.jpg" );
+    if ( replacement == std::string::npos )
     {
-      double dot = k->normal_x * j->normal_x + k->normal_y * j->normal_y + k->normal_z * j->normal_z;
-      double length = j->normal_x * j->normal_x + j->normal_y * j->normal_y + j->normal_z * j->normal_z;
-      double flip = ( dot > 0 ) ? 1.0 / length : -1.0 / length;
-      if ( length == 0 )
-      {
-        continue;
-      }
-      pcl::PointXYZRGBNormal newPoint;
-      newPoint.normal_x = flip * j->normal_x;
-      newPoint.normal_y = flip * j->normal_y;
-      newPoint.normal_z = flip * j->normal_z;
-      newPoint.rgb = k->rgb;
-      newPoint.x = i->x;
-      newPoint.y = i->y;
-      newPoint.z = i->z;
-      final.push_back ( newPoint );
+      continue;
     }
-    std::cout << "Reorienting on size " << final.size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    reorient ( final );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
-#endif
-    std::cout << "Saving ply of size " << final.size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    savePlyFile ( options.output + ".ply", final );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
-
-    std::cout << "Saving pcd of size " << final.size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    pcl::io::savePCDFile ( options.output + ".pcd", final, true );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+#pragma omp critical
+    std::cout << "Opening " << colorFilename << std::endl;
+    std::string depthFilename ( colorFilename );
+    assert ( replacement + 9 <= depthFilename.size () );
+    depthFilename.replace ( replacement, 9, "depth.raw" );
+    std::string keyFilename ( colorFilename );
+    assert ( replacement + 9 <= keyFilename.size () );
+    keyFilename.replace ( replacement, 9, "color.ks" );
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
+      colorFilename,
+      depthFilename,
+      "",
+      cameras[i],
+      options.depthTuning,
+      options.downscale, basis );
+    carveVoxels ( *points, basis, cameras [i], options.depthTuning, temp, options.voxelSize, min, dimensions );
   }
-  else
+  TIME_END
+
+  TIME_BEGIN ( "Building final voxel grid" )
+#pragma omp parallel for
+  for ( int i = 0; i < ( int )temp.size (); ++i )
   {
-    std::cout << "Saving ply of size " << combinedCloud->size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    savePlyFile ( options.output + ".ply", *combinedCloud );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
-
-    std::cout << "Saving pcd of size " << combinedCloud->size () << std::flush;
-    gettimeofday ( &tic, 0 );
-    pcl::io::savePCDFile ( options.output + ".pcd", *combinedCloud, true );
-    gettimeofday ( &toc, 0 );
-    std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" << std::endl;
+    for ( int j = 0; j < ( int )temp[i].size (); ++j )
+    {
+      for ( int k = 0; k < ( int )temp[i][j].size (); ++k )
+      {
+        voxels [i][j][k] = ( float )temp[i][j][k].first / temp[i][j][k].second;
+      }
+    }
   }
+  TIME_END
+
+  TIME_BEGIN ( "Saving voxels" )
+  voxels.save ( options.output + ".kvo" );
+  TIME_END
 }
