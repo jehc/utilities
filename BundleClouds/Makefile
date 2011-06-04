@@ -1,4 +1,4 @@
-CXXFLAGS     = -O3 -fopenmp
+CXXFLAGS     = -g -fopenmp -Wall -Werror -Wno-non-virtual-dtor
 INCLUDE	     = -I/home/kmatzen/local/include/pcl-1.0 -I/home/kmatzen/local/include/eigen3
 LIBS         = -lBundleFile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lply -lkvo
  
