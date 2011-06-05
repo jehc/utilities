@@ -20,7 +20,7 @@ TransferFunctionWidget::TransferFunctionWidget ( QWidget * parent, const QColor 
   hoverPoints->setConnectionType ( HoverPoints::LineConnection );
   setSizePolicy ( QSizePolicy::Preferred, QSizePolicy::Fixed );
   connect ( hoverPoints, SIGNAL ( pointsChanged ( QPolygonF ) ), this, SLOT ( transferFunctionChanged () ) );
-  transferFunction.resize ( 256 );
+  transferFunction.resize ( 1024 );
   transferFunctionChanged ();
   setFeatures ( QDockWidget::DockWidgetMovable );
 }
@@ -50,9 +50,9 @@ TransferFunctionWidget::transferFunctionChanged ()
   int index = 0;
   const QPolygonF points = hoverPoints->points ();
   assert ( points.size () >= 2 );
-  for ( int i = 0; i < 255; ++i )
+  for ( int i = 0; i < 1024; ++i )
   {
-    float position = i * size ().width () / 255.0;
+    double position = i * size ().width () / 1024.0;
     while ( points.at ( index ).x () <= position )
     {
       ++index;
