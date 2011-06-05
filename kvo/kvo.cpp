@@ -30,7 +30,7 @@ KVO::save ( const std::string & filename )
   output << "translation " << translation [0] << " " << translation [1] << " " << translation [2] <<
   std::endl;
 
-  output << "data " << sizeof ( float ) * size ( 0 ) * size ( 1 ) * size ( 2 ) << " ";
+  output << "data " << 4*sizeof ( float ) * size ( 0 ) * size ( 1 ) * size ( 2 ) << " ";
 
   for ( size_t i = 0; i < data.size (); ++i )
   {
@@ -38,7 +38,10 @@ KVO::save ( const std::string & filename )
     {
       for ( size_t k = 0; k < data[i][j].size (); ++k )
       {
-        output.write ( ( char * )&data[i][j][k], sizeof ( float ) );
+        output.write ( ( char * )&data[i][j][k].r, sizeof ( float ) );
+        output.write ( ( char * )&data[i][j][k].g, sizeof ( float ) );
+        output.write ( ( char * )&data[i][j][k].b, sizeof ( float ) );
+        output.write ( ( char * )&data[i][j][k].a, sizeof ( float ) );
       }
     }
   }
@@ -200,9 +203,9 @@ KVO::load ( const std::string & filename )
     std::cout << "Failed to read bytes" << std::endl;
     exit ( 1 );
   }
-  if ( bytes != sizeof ( float ) * a * b * c )
+  if ( bytes != 4 * sizeof ( float ) * a * b * c )
   {
-    std::cout << "Expected data of size " << sizeof ( float ) * a * b * c << " but got " << bytes <<
+    std::cout << "Expected data of size " << 4 * sizeof ( float ) * a * b * c << " but got " << bytes <<
     std::endl;
     exit ( 1 );
   }
@@ -219,8 +222,11 @@ KVO::load ( const std::string & filename )
     {
       for ( size_t k = 0; k < c; ++k )
       {
-        float & voxel = voxels.data[i][j][k];
-        input.read ( ( char * )&voxel, sizeof ( float ) );
+        Color & voxel = voxels.data[i][j][k];
+        input.read ( ( char * )&voxel.r, sizeof ( float ) );
+        input.read ( ( char * )&voxel.g, sizeof ( float ) );
+        input.read ( ( char * )&voxel.b, sizeof ( float ) );
+        input.read ( ( char * )&voxel.a, sizeof ( float ) );
       }
     }
   }
