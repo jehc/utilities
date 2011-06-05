@@ -478,11 +478,46 @@ saveHistogram ( const std::string &                      filename,
   savePlyFile ( filename, cloud );
 }
 
+void
+basis2rotation (Eigen::Matrix3f & basis)
+{
+  // Hold first row fixed
+  Eigen::Vector3f row1 (basis(0,0), basis(0,1), basis(0,2));
+
+  // Project 2nd row onto tangent plane
+  Eigen::Vector3f row2 (basis(1,0), basis(1,1), basis(1,2));
+  row2 -= row1.dot(row2)*row1;
+
+  // Take cross product of first two rows and flip sign to match 3rd row
+  Eigen::Vector3f row3 (basis(2,0), basis(2,1), basis(2,2));
+  Eigen::Vector3f c = row1.cross (row2);
+  bool flip = row3.dot(c) < 0;
+  row3 = c;
+  if (flip)
+  {
+    row3 *= -1;
+  }
+
+  for (int i = 0; i < 3; ++i)
+  {
+    basis (1, i) = row2[i];
+    basis (2, i) = row3[i];
+  }
+
+  std::cout << "Rotation matrice's det is " << basis.determinant() << std::endl;
+}
+
 Eigen::Matrix3f
 reorient ( pcl::PointCloud<pcl::PointXYZRGBNormal> & pointCloud )
 {
   std::vector<std::vector<float> > histogram = generate_histogram ( pointCloud );
   Eigen::Matrix3f basis = compute_axis ( histogram );
+
+  std::cout << "Basis " << std::endl;
+  std::cout << basis << std::endl;
+
+  basis2rotation (basis);
+
   project_onto_basis ( pointCloud, basis );
   saveHistogram ( "/home/kmatzen/NOBACKUP/histogram.ply", histogram, basis );
 
