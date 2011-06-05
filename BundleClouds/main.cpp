@@ -1059,6 +1059,7 @@ main ( int argc, char * * argv )
   normalEstimation.setOutputNormals ( normals );
   normalEstimation.setSearchRadius ( options.mlsRadius );
   normalEstimation.setSearchMethod ( tree );
+  normalEstimation.setPolynomialOrder (1);
   pcl::PointCloud<pcl::PointXYZRGBNormal> cleaned;
   std::cout << "Data size is " << reduced->size () << std::endl;
   TIME_BEGIN ( "Reconstructing normals with MLS" )
