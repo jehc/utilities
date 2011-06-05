@@ -16,16 +16,21 @@ std::string filename;
 
 GLuint voxelTexture;
 GLuint transferFunctionTexture;
+GLuint fbo;
 
 QGLShaderProgram * shaderProgram;
+QGLShaderProgram * fullScreenProgram;
 
-Eigen::Vector3f aspect;
+Eigen::Vector3d aspect;
+Eigen::Vector3d fudge;
 
-float voxelSize;
-float slice;
-float scale;
+double voxelSize;
+double slice;
+double scale;
 
-std::vector<float> transferFunction;
+std::vector<GLfloat> transferFunction;
+
+GLuint fullScreenTexture;
 
 int vertexLocation;
 int textureLocation;
@@ -36,14 +41,19 @@ int texCoordLocation;
 int scaleLocation;
 int sliceLocation;
 
+int fullScreenTextureLocation;
+int fullScreenVertexLocation;
+int fullScreenTexcoordLocation;
+
 void initializeTexture ( KVO & );
 void initializeShaders ( QGLPainter * );
+void initializeFBO (QGLPainter *);
 void transferFunctionChanged ();
 
 class IntersectionCompare
 {
 public:
-bool operator () ( const std::pair<float, Eigen::Vector4f> & a, const std::pair<float, Eigen::Vector4f> & b )
+bool operator () ( const std::pair<double, Eigen::Vector4d> & a, const std::pair<double, Eigen::Vector4d> & b )
 {
   return a.first < b.first;
 }
@@ -62,10 +72,10 @@ QSize sizeHint () const
 }
 
 public slots:
-void transferFunctionRChanged ( const QVector<float> & );
-void transferFunctionGChanged ( const QVector<float> & );
-void transferFunctionBChanged ( const QVector<float> & );
-void transferFunctionAChanged ( const QVector<float> & );
+void transferFunctionRChanged ( const QVector<double> & );
+void transferFunctionGChanged ( const QVector<double> & );
+void transferFunctionBChanged ( const QVector<double> & );
+void transferFunctionAChanged ( const QVector<double> & );
 void scaleChanged ( int );
 void sliceChanged ( int );
 };

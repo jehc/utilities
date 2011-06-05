@@ -19,11 +19,12 @@ KVOViewerWidget::initializeGL ( QGLPainter * painter )
   // load the voxel opacity data
   KVO voxels = KVO::load ( filename );
 
-  float scale = std::max ( std::max ( voxels.size ( 0 ), voxels.size ( 1 ) ), voxels.size ( 2 ) );
+  double scale = std::max ( std::max ( voxels.size ( 0 ), voxels.size ( 1 ) ), voxels.size ( 2 ) );
 
   for ( int i = 0; i < 3; ++i )
   {
-    aspect [i] = scale / voxels.size ( i );
+    aspect [i] = voxels.size ( i )/scale;
+    fudge [i] = 1.0/voxels.size(i);
   }
   voxelSize = 2.0 / scale;
 
@@ -34,6 +35,8 @@ KVOViewerWidget::initializeGL ( QGLPainter * painter )
 
   initializeShaders ( painter );
 
+  initializeFBO (painter);
+
   // Set the background to white
   glClearColor ( 1.0, 1.0, 1.0, 1.0 );
 
@@ -41,9 +44,22 @@ KVOViewerWidget::initializeGL ( QGLPainter * painter )
 }
 
 void
+KVOViewerWidget::initializeFBO (QGLPainter * painter)
+{
+  // Create the FBO
+  painter->glGenFramebuffers (1, &fbo);
+
+  // Create the color texture
+  glGenTextures (1, &fullScreenTexture);
+
+  // Unbind the FBO
+  painter->glBindFramebuffer (GL_FRAMEBUFFER, 0);
+}
+
+void
 KVOViewerWidget::initializeTexture ( KVO & voxels )
 {
-  transferFunction.resize ( 256 * 4 );
+  transferFunction.resize ( 1024 * 4 );
 
   // enable 1d textures
   glEnable ( GL_TEXTURE_1D );
@@ -57,15 +73,13 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
   // interpolation stuff
   glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
   glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-  glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-  glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_WRAP_T, GL_REPEAT );
-  glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_WRAP_R, GL_REPEAT );
+  glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP );
 
   // create texture
-  std::vector<float> tf ( 256 );
+  std::vector<GLfloat> tf ( 1024 );
 
   // copy buffer
-  glTexImage1D ( GL_TEXTURE_1D, 0, GL_ALPHA, 256, 0, GL_ALPHA, GL_FLOAT, &tf [0] );
+  glTexImage1D ( GL_TEXTURE_1D, 0, GL_RGBA32F, 1024, 0, GL_ALPHA, GL_FLOAT, &tf [0] );
 
   // unbind texture
   glBindTexture ( GL_TEXTURE_1D, 0 );
@@ -85,36 +99,45 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
   // The magical parameters make the bad people go away
   glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
   glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT );
-  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP );
 
   // create buffer
-  std::vector<GLfloat> buffer ( voxels.size ( 0 ) * voxels.size ( 1 ) * voxels.size ( 2 ) );
+  std::vector<GLfloat> buffer ( 4 * voxels.size ( 0 ) * voxels.size ( 1 ) * voxels.size ( 2 ) );
+  double max = 0;
 
   // populate buffer
-  size_t index = 0;
   for ( size_t j = 0; j < voxels.size ( 1 ); ++j )
   {
     for ( size_t k = 0; k < voxels.size ( 2 ); ++k )
     {
       for ( size_t i = 0; i < voxels.size ( 0 ); ++i )
       {
-        if ( voxels[i][j][k].second )
+        if (voxels[i][j][k].a > max)
         {
-          buffer[index++] = ( GLfloat )voxels[i][j][k].first / ( GLfloat )voxels[i][j][k].second;
+          max = voxels[i][j][k].a;
         }
-        else
-        {
-          buffer[index++] = 0.0;
-        }
+      }
+    }
+  }
+    for ( size_t k = 0; k < voxels.size ( 2 ); ++k ) // depth
+  {
+      for ( size_t i = 0; i < voxels.size ( 0 ); ++i ) //width
+    {
+  for ( size_t j = 0; j < voxels.size ( 1 ); ++j ) // height
+      {
+        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] = isnan(voxels[i][j][k].a) ? 0.5/1024.0 : (1023.0*voxels[i][j][k].a / max + 0.5)/1024.0;
+        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k)] = isnan(voxels[i][j][k].r) ? 0.0 : voxels[i][j][k].r / 255.0;
+        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 1] = isnan(voxels[i][j][k].g) ? 0.0 : voxels[i][j][k].g / 255.0;
+        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 2] = isnan(voxels[i][j][k].b) ? 0.0 : voxels[i][j][k].b / 255.0;
       }
     }
   }
 
   // copy buffer
-  glTexImage3D ( GL_TEXTURE_3D, 0, GL_ALPHA, voxels.size ( 0 ), voxels.size ( 2 ), voxels.size (
-      1 ), 0, GL_ALPHA, GL_FLOAT, &buffer [0] );
+  glTexImage3D ( GL_TEXTURE_3D, 0, GL_RGBA32F, voxels.size ( 0 ), voxels.size ( 1 ), voxels.size (
+      2 ), 0, GL_RGBA, GL_FLOAT, &buffer [0] );
 
   // unbind texture
   glBindTexture ( GL_TEXTURE_3D, voxelTexture );
@@ -131,10 +154,11 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
     "attribute vec4 vertex;\n"
     "attribute vec4 texCoord;\n"
     "uniform mat4 projectionMatrix;\n"
+    "varying vec3 coord;\n"
     "void\n"
     "main ()\n"
     "{\n"
-    "  gl_TexCoord [0] = texCoord;\n"
+    "  coord = texCoord.stp;\n"
     "  gl_Position = projectionMatrix * vertex;\n"
     "}";
 
@@ -145,15 +169,16 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
     "uniform sampler1D transferFunction;\n"
     "uniform float scale;\n"
     "uniform float slice;\n"
+    "varying vec3 coord;\n"
     "void\n"
     "main ()\n"
     "{\n"
-    "  float v = texture3D (dataTex, gl_TexCoord[0].xyz).a;\n"
+    "  float v = texture3D (dataTex, coord).a;\n"
     "  float a0 = texture1D (transferFunction, v).a;\n"
     "  vec3 c = texture1D (transferFunction, v).rgb;\n"
     "  const float s0 = 500;\n"
     "  float a = (1 - pow(1 - a0, s0/samples));\n"
-    "  gl_FragColor = (gl_TexCoord[0].z < slice) ? scale * a * vec4(c, 1.0) : vec4(0.0,0.0,0.0,0.0);\n"
+    "  gl_FragColor = (coord.t < slice) ? scale * a * vec4(c, 1.0) : vec4(0.0,0.0,0.0,0.0);\n"
     "}";
 
   // Create shader program
@@ -167,6 +192,9 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
 
   // Link shader program
   shaderProgram->link ();
+
+  // Bind the program
+  shaderProgram->bind();
 
   // Get texture location
   textureLocation = shaderProgram->uniformLocation ( "dataTex" );
@@ -194,6 +222,55 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
 
   // Unbind program
   shaderProgram->release ();
+
+  // Create vertex shader source
+  const GLchar * fullScreenVertexShaderSource =
+    "attribute vec4 vertex;\n"
+    "attribute vec4 texCoord;\n"
+    "varying vec2 coord;\n"
+    "void\n"
+    "main ()\n"
+    "{\n"
+    "  coord = texCoord.st;\n"
+    "  gl_Position = vertex;\n"
+    "}";
+
+  // Create fragment shader source
+  const GLchar * fullScreenFragmentShaderSource =
+    "uniform sampler2D texture;\n"
+    "varying vec2 coord;\n"
+    "void\n"
+    "main ()\n"
+    "{\n"
+    "  gl_FragColor = texture2D (texture, coord);\n"
+    "}";
+
+  // Create shader program
+  fullScreenProgram = new QGLShaderProgram ( painter->context (), this );
+
+  // Attach vertex shader
+  fullScreenProgram->addShaderFromSourceCode ( QGLShader::Vertex, fullScreenVertexShaderSource );
+
+  // Attach fragment shader
+  fullScreenProgram->addShaderFromSourceCode ( QGLShader::Fragment, fullScreenFragmentShaderSource );
+
+  // Link shader program
+  fullScreenProgram->link ();
+
+  // Bind the program
+  fullScreenProgram->bind();
+
+  // Get texture location
+  fullScreenTextureLocation = fullScreenProgram->uniformLocation ( "texture" );
+
+  // Get vertex location
+  fullScreenVertexLocation = fullScreenProgram->attributeLocation ("vertex");
+ 
+  // Get texcoord location
+  fullScreenTexcoordLocation = fullScreenProgram->attributeLocation ("texCoord");
+
+  // Unbind the program
+  fullScreenProgram->release();
 }
 
 void
@@ -211,9 +288,32 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
     assert ( 0 );
   }
 
+  // Enable the shader program
+  shaderProgram->bind ();
+
+  // Enable texture 2D
+  glEnable (GL_TEXTURE_2D);
+
+  // Bind the FBO
+  painter->glBindFramebuffer (GL_FRAMEBUFFER, fbo);
+
+  // Use texture unit 2
+  glActiveTexture (GL_TEXTURE2);
+
+  // Bind the destination texture
+  glBindTexture (GL_TEXTURE_2D, fullScreenTexture);
+
+  // Generate storage for FBO
+  glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, width(), height(), 0, GL_RGBA, GL_FLOAT, NULL);
+
+  // Create color attachment for FBO
+  painter->glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fullScreenTexture, 0);
+
+  glViewport (0, 0, width(), height());
+
   // Get modelview matrix
   QMatrix4x4 qModelViewMatrix = camera ()->modelViewMatrix ();
-  Eigen::Matrix4f modelViewMatrix;
+  Eigen::Matrix4d modelViewMatrix;
   for ( int i = 0; i < 4; ++i )
   {
     for ( int j = 0; j < 4; ++j )
@@ -224,11 +324,6 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
 
   // Clear the viewport
   glClear ( GL_COLOR_BUFFER_BIT );
-
-  // Enable the shader program
-  shaderProgram->bind ();
-
-  glEnable ( GL_POLYGON_SMOOTH );
 
   // Enable blending
   glEnable ( GL_BLEND );
@@ -262,24 +357,24 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
 
   // Set projection matrix
   shaderProgram->setUniformValue ( projectionMatrixLocation,
-    camera ()->projectionMatrix ( ( float )width () / height () ) );
+    camera ()->projectionMatrix ( ( double )width () / height () ) );
 
   // Set scale
-  shaderProgram->setUniformValue ( scaleLocation, scale );
+  shaderProgram->setUniformValue ( scaleLocation, (GLfloat) scale );
 
   // Set slice
-  shaderProgram->setUniformValue ( sliceLocation, slice );
+  shaderProgram->setUniformValue ( sliceLocation, (GLfloat) slice );
 
   // Find corners
-  std::vector<Eigen::Vector4f> corners;
-  corners.push_back ( Eigen::Vector4f ( -aspect[0], -aspect[1], -aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( -aspect[0], -aspect[1], aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( -aspect[0], aspect[1], -aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( -aspect[0], aspect[1], aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( aspect[0], -aspect[1], -aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( aspect[0], -aspect[1], aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( aspect[0], aspect[1], -aspect[2], 1.0 ) );
-  corners.push_back ( Eigen::Vector4f ( aspect[0], aspect[1], aspect[2], 1.0 ) );
+  std::vector<Eigen::Vector4d> corners;
+  corners.push_back ( Eigen::Vector4d ( -aspect[0], -aspect[1], -aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( -aspect[0], -aspect[1], aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( -aspect[0], aspect[1], -aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( -aspect[0], aspect[1], aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( aspect[0], -aspect[1], -aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( aspect[0], -aspect[1], aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( aspect[0], aspect[1], -aspect[2], 1.0 ) );
+  corners.push_back ( Eigen::Vector4d ( aspect[0], aspect[1], aspect[2], 1.0 ) );
   std::vector<std::pair<int, int> > edges;
   edges.push_back ( std::make_pair ( 0, 1 ) );
   edges.push_back ( std::make_pair ( 0, 2 ) );
@@ -298,8 +393,8 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
     corners [i] = modelViewMatrix * corners [i];
     corners [i] = corners [i] / corners[i][3];
   }
-  float min = std::numeric_limits<float>::infinity ();
-  float max = -std::numeric_limits<float>::infinity ();
+  double min = std::numeric_limits<double>::infinity ();
+  double max = -std::numeric_limits<double>::infinity ();
   for ( size_t i = 0; i < corners.size (); ++i )
   {
     if ( corners[i][2] < min )
@@ -312,22 +407,22 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
     }
   }
 
-  std::vector<Eigen::Vector4f> voxelCorners;
-  voxelCorners.push_back ( Eigen::Vector4f ( -voxelSize, -voxelSize, -voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( -voxelSize, -voxelSize, voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( -voxelSize, voxelSize, -voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( -voxelSize, voxelSize, voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( voxelSize, -voxelSize, -voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( voxelSize, -voxelSize, voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( voxelSize, voxelSize, -voxelSize, 1.0 ) );
-  voxelCorners.push_back ( Eigen::Vector4f ( voxelSize, voxelSize, voxelSize, 1.0 ) );
+  std::vector<Eigen::Vector4d> voxelCorners;
+  voxelCorners.push_back ( Eigen::Vector4d ( -voxelSize, -voxelSize, -voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( -voxelSize, -voxelSize, voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( -voxelSize, voxelSize, -voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( -voxelSize, voxelSize, voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( voxelSize, -voxelSize, -voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( voxelSize, -voxelSize, voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( voxelSize, voxelSize, -voxelSize, 1.0 ) );
+  voxelCorners.push_back ( Eigen::Vector4d ( voxelSize, voxelSize, voxelSize, 1.0 ) );
   for ( size_t i = 0; i < corners.size (); ++i )
   {
     voxelCorners [i] = modelViewMatrix * voxelCorners [i];
     voxelCorners [i] = voxelCorners [i] / corners[i][3];
   }
-  float voxelMin = std::numeric_limits<float>::infinity ();
-  float voxelMax = -std::numeric_limits<float>::infinity ();
+  double voxelMin = std::numeric_limits<double>::infinity ();
+  double voxelMax = -std::numeric_limits<double>::infinity ();
   for ( size_t i = 0; i < corners.size (); ++i )
   {
     if ( voxelCorners[i][2] < voxelMin )
@@ -341,47 +436,46 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   }
 
   // Generate slices
-  float sliceDelta = ( voxelMax - voxelMin ) * 0.5;
-  std::vector<std::vector<std::pair<float, Eigen::Vector4f> > > slices ( ( max - min ) / sliceDelta );
+  double sliceDelta = ( voxelMax - voxelMin ) * 0.5;
+  std::vector<std::vector<std::pair<double, Eigen::Vector4d> > > slices ( ( max - min ) / sliceDelta );
 #pragma omp parallel for
   for ( size_t s = 0; s < slices.size (); ++s )
   {
-    std::vector<std::pair<float, Eigen::Vector4f> > & intersections = slices[s];
+    std::vector<std::pair<double, Eigen::Vector4d> > & intersections = slices[s];
 
     for ( size_t i = 0; i < edges.size (); ++i )
     {
       const std::pair<int, int> & edge = edges [i];
-      Eigen::Matrix3f A;
+      Eigen::Matrix3d A;
       A << corners[edge.first][0] - corners[edge.second][0], 1, 0,
       corners[edge.first][1] - corners[edge.second][1], 0, 1,
       corners[edge.first][2] - corners[edge.second][2], 0, 0;
 
-      Eigen::Vector3f b ( corners[edge.first][0],
+      Eigen::Vector3d b ( corners[edge.first][0],
                           corners[edge.first][1],
                           corners[edge.first][2] - ( min + s * sliceDelta ) );
 
-      Eigen::Vector3f x = A.inverse () * b;
+      Eigen::Vector3d x = A.inverse () * b;
 
       if ( x[0] < 0 || x[0] > 1 || x[0] != x[0] )
       {
         continue;
       }
 
-      Eigen::Vector4f intersection =
+      Eigen::Vector4d intersection =
         ( corners[edge.first] + x[0] * ( corners[edge.second] - corners[edge.first] ) );
       intersections.push_back ( std::make_pair ( 0, intersection ) );
     }
 
-    assert ( intersections.size () <= 6 && intersections.size () >= 3 );
   }
 
   // Find center of slices and the angles
   int total_vertices = 0;
-  std::vector<Eigen::Vector4f> centers ( slices.size () );
+  std::vector<Eigen::Vector4d> centers ( slices.size () );
   for ( size_t i = 0; i < slices.size (); ++i )
   {
-    std::vector<std::pair<float, Eigen::Vector4f> > & intersections = slices [i];
-    Eigen::Vector4f & center = centers [i];
+    std::vector<std::pair<double, Eigen::Vector4d> > & intersections = slices [i];
+    Eigen::Vector4d & center = centers [i];
     center.setZero ();
     for ( size_t j = 0; j < intersections.size (); ++j )
     {
@@ -400,40 +494,40 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   }
 
   // Make texcoord array
-  std::vector<GLfloat> texcoords ( total_vertices * 3 );
+  std::vector<QVector3D> texcoords ( total_vertices );
   int index = 0;
   for ( size_t i = 0; i < slices.size (); ++i )
   {
-    std::vector<std::pair<float, Eigen::Vector4f> > & intersections = slices [i];
+    std::vector<std::pair<double, Eigen::Vector4d> > & intersections = slices [i];
     for ( size_t j = 0; j < intersections.size (); ++j )
     {
-      Eigen::Vector4f n = modelViewMatrix.inverse () * intersections [j].second;
+      Eigen::Vector4d n = modelViewMatrix.inverse () * intersections [j].second;
       n /= n[3];
-      texcoords [3 * index] = 0.5 * n[0] / aspect[0] + 0.5;
-      texcoords [3 * index + 1] = 0.5 * n[1] / aspect[1] + 0.5;
-      texcoords [3 * index + 2] = 0.5 * n[2] / aspect[2] + 0.5;
+      texcoords [index].setX((1.0 - fudge[0]) * 0.5 * n[0] / aspect[0] + 0.5);
+      texcoords [index].setY((1.0 - fudge[1]) * 0.5 * n[1] / aspect[1] + 0.5);
+      texcoords [index].setZ((1.0 - fudge[2]) * 0.5 * n[2] / aspect[2] + 0.5);
       ++index;
     }
   }
 
   // Copy texcoords
-  shaderProgram->setAttributeArray ( texCoordLocation, &texcoords[0], 3 );
+  shaderProgram->setAttributeArray ( texCoordLocation, &texcoords[0]);
 
   // Enable the tex coords
   shaderProgram->enableAttributeArray ( texCoordLocation );
 
   // Make vertex array
-  std::vector<GLfloat> vertices ( total_vertices * 3 );
+  std::vector<QVector3D> vertices ( total_vertices );
   index = 0;
   for ( size_t i = 0; i < slices.size (); ++i )
   {
-    std::vector<std::pair<float, Eigen::Vector4f> > & intersections = slices [i];
+    std::vector<std::pair<double, Eigen::Vector4d> > & intersections = slices [i];
     for ( size_t j = 0; j < intersections.size (); ++j )
     {
-      const Eigen::Vector4f & n = intersections [j].second;
-      vertices [3 * index] = n [0];
-      vertices [3 * index + 1] = n [1];
-      vertices [3 * index + 2] = n [2];
+      const Eigen::Vector4d & n = intersections [j].second;
+      vertices [index].setX(n [0]);
+      vertices [index].setY(n [1]);
+      vertices [index].setZ(n [2]);
       ++index;
     }
   }
@@ -442,7 +536,7 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   shaderProgram->setUniformValue ( samplesLocation, ( GLfloat )slices.size () );
 
   // Copy vertices
-  shaderProgram->setAttributeArray ( vertexLocation, &vertices[0], 3 );
+  shaderProgram->setAttributeArray ( vertexLocation, &vertices[0] );
 
   // Enable the vertices
   shaderProgram->enableAttributeArray ( vertexLocation );
@@ -478,10 +572,74 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
 
   // Disable program
   shaderProgram->release ();
+
+  // Unbind FBO
+  painter->glBindFramebuffer (GL_FRAMEBUFFER, 0);
+
+  glViewport (0,0,width(),height());
+
+  // Clear the viewport
+  glClear ( GL_COLOR_BUFFER_BIT );
+
+  // Bind the full screen program
+  fullScreenProgram->bind();
+
+  // Use texture unit 2
+  painter->glActiveTexture (GL_TEXTURE2);
+
+  // Bind texture
+  glBindTexture (GL_TEXTURE_2D, fullScreenTexture);
+
+  // Set texture uniform to texture unit 2
+  fullScreenProgram->setUniformValue (fullScreenTextureLocation, 2);
+
+  // Generate vertices
+  std::vector<QVector3D> fullScreenVertices;
+  fullScreenVertices.push_back (QVector3D (-1, -1, 0));
+  fullScreenVertices.push_back (QVector3D ( 1, -1, 0));
+  fullScreenVertices.push_back (QVector3D ( 1,  1, 0));
+  fullScreenVertices.push_back (QVector3D (-1,  1, 0));
+
+  // Copy vertices
+  fullScreenProgram->setAttributeArray ( fullScreenVertexLocation, &fullScreenVertices[0] );
+
+  // Enable the vertices
+  fullScreenProgram->enableAttributeArray ( fullScreenVertexLocation );
+
+  // Generate texcoords
+  std::vector<QVector3D> fullScreenTexcoords;
+  fullScreenTexcoords.push_back (QVector2D (0, 0));
+  fullScreenTexcoords.push_back (QVector2D (1, 0));
+  fullScreenTexcoords.push_back (QVector2D (1, 1));
+  fullScreenTexcoords.push_back (QVector2D (0, 1));
+
+  // Copy texcoords
+  fullScreenProgram->setAttributeArray ( fullScreenTexcoordLocation, &fullScreenTexcoords[0] );
+
+  // Enable the texcoords
+  fullScreenProgram->enableAttributeArray ( fullScreenTexcoordLocation );
+
+  // Draw the rectangle
+  glDrawArrays (GL_POLYGON, 0, 4);
+
+  // Disable the vertices
+  fullScreenProgram->disableAttributeArray ( fullScreenVertexLocation );
+
+  // Disable the texcoords
+  fullScreenProgram->disableAttributeArray ( fullScreenTexcoordLocation );
+
+  // Unbind the full screen program
+  fullScreenProgram->release();
+
+  // Unbind texture
+  glBindTexture (GL_TEXTURE_2D, 0);
+
+  // Disable texture 2D
+  glDisable (GL_TEXTURE_2D);
 }
 
 void
-KVOViewerWidget::transferFunctionRChanged ( const QVector<float> & transferFunctionR )
+KVOViewerWidget::transferFunctionRChanged ( const QVector<double> & transferFunctionR )
 {
   for ( int i = 0; i < transferFunctionR.size (); ++i )
   {
@@ -491,7 +649,7 @@ KVOViewerWidget::transferFunctionRChanged ( const QVector<float> & transferFunct
 }
 
 void
-KVOViewerWidget::transferFunctionGChanged ( const QVector<float> & transferFunctionG )
+KVOViewerWidget::transferFunctionGChanged ( const QVector<double> & transferFunctionG )
 {
   for ( int i = 0; i < transferFunctionG.size (); ++i )
   {
@@ -501,7 +659,7 @@ KVOViewerWidget::transferFunctionGChanged ( const QVector<float> & transferFunct
 }
 
 void
-KVOViewerWidget::transferFunctionBChanged ( const QVector<float> & transferFunctionB )
+KVOViewerWidget::transferFunctionBChanged ( const QVector<double> & transferFunctionB )
 {
   for ( int i = 0; i < transferFunctionB.size (); ++i )
   {
@@ -511,7 +669,7 @@ KVOViewerWidget::transferFunctionBChanged ( const QVector<float> & transferFunct
 }
 
 void
-KVOViewerWidget::transferFunctionAChanged ( const QVector<float> & transferFunctionA )
+KVOViewerWidget::transferFunctionAChanged ( const QVector<double> & transferFunctionA )
 {
   for ( int i = 0; i < transferFunctionA.size (); ++i )
   {
@@ -530,14 +688,13 @@ KVOViewerWidget::transferFunctionChanged ()
   glBindTexture ( GL_TEXTURE_1D, transferFunctionTexture );
 
   // copy buffer
-  glTexImage1D ( GL_TEXTURE_1D, 0, GL_RGBA, 256, 0, GL_RGBA, GL_FLOAT, &transferFunction [0] );
+  glTexImage1D ( GL_TEXTURE_1D, 0, GL_RGBA32F, 1024, 0, GL_RGBA, GL_FLOAT, &transferFunction [0] );
 
   // unbind texture
   glBindTexture ( GL_TEXTURE_1D, 0 );
 
   // disable 1d textures
   glDisable ( GL_TEXTURE_1D );
-
   repaint ();
 }
 
