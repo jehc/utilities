@@ -14,12 +14,12 @@ Q_OBJECT
 
 std::string filename;
 
+int numSlices;
+
 GLuint voxelTexture;
 GLuint transferFunctionTexture;
-GLuint fbo;
 
 QGLShaderProgram * shaderProgram;
-QGLShaderProgram * fullScreenProgram;
 
 Eigen::Vector3d aspect;
 Eigen::Vector3d fudge;
@@ -27,10 +27,9 @@ Eigen::Vector3d fudge;
 double voxelSize;
 double slice;
 double scale;
+int realColors;
 
 std::vector<GLfloat> transferFunction;
-
-GLuint fullScreenTexture;
 
 int vertexLocation;
 int textureLocation;
@@ -40,14 +39,10 @@ int projectionMatrixLocation;
 int texCoordLocation;
 int scaleLocation;
 int sliceLocation;
-
-int fullScreenTextureLocation;
-int fullScreenVertexLocation;
-int fullScreenTexcoordLocation;
+int realColorsLocation;
 
 void initializeTexture ( KVO & );
 void initializeShaders ( QGLPainter * );
-void initializeFBO (QGLPainter *);
 void transferFunctionChanged ();
 
 class IntersectionCompare
@@ -78,6 +73,8 @@ void transferFunctionBChanged ( const QVector<double> & );
 void transferFunctionAChanged ( const QVector<double> & );
 void scaleChanged ( int );
 void sliceChanged ( int );
+void numSlicesChanged (int);
+void realColorsChanged (int);
 };
 
 #endif

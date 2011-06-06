@@ -25,40 +25,75 @@ main ( int argc, char * * argv )
   TransferFunctionWidget * tfG = new TransferFunctionWidget ( &w, Qt::green );
   TransferFunctionWidget * tfB = new TransferFunctionWidget ( &w, Qt::blue );
 
-  QDockWidget * sliceDock = new QDockWidget ( &w, 0 );
-  sliceDock->setFeatures ( QDockWidget::NoDockWidgetFeatures );
-  QScrollBar * sliceBar = new QScrollBar ( Qt::Vertical, sliceDock );
+  QDockWidget * controlsDock = new QDockWidget ( &w, 0 );
+  QWidget * controlsWidget = new QWidget (controlsDock);
+  controlsDock->setWidget (controlsWidget);
+  QLayout * controlsLayout = new QHBoxLayout (controlsWidget);
+  controlsWidget->setLayout (controlsLayout);
+
+  QWidget * sliceWidget = new QWidget (controlsWidget);
+  QLayout * sliceLayout = new QVBoxLayout (sliceWidget);
+  sliceWidget->setLayout (sliceLayout);
+  QLabel * sliceLabel = new QLabel ("S\nl\ni\nc\ne", sliceWidget);
+  sliceLabel->setAlignment (Qt::AlignHCenter);
+  sliceLayout->addWidget (sliceLabel);
+  QSlider * sliceBar = new QSlider ( Qt::Vertical, sliceWidget );
+  sliceLayout->addWidget (sliceBar);
   sliceBar->setMinimum ( 0 );
   sliceBar->setMaximum ( 100 );
-  sliceBar->setSliderPosition ( 0 );
-  sliceDock->setWidget ( sliceBar );
+  sliceBar->setSliderPosition ( 100 );
+  sliceBar->setTickPosition (QSlider::TicksRight);
+  controlsLayout->addWidget ( sliceWidget );
 
-  QDockWidget * scaleDock = new QDockWidget ( &w, 0 );
-  scaleDock->setFeatures ( QDockWidget::NoDockWidgetFeatures );
-  QScrollBar * scaleBar = new QScrollBar ( Qt::Horizontal, scaleDock );
+  QWidget * scaleWidget = new QWidget (controlsWidget);
+  QLayout * scaleLayout = new QVBoxLayout (scaleWidget);
+  scaleWidget->setLayout (scaleLayout);
+  QLabel * scaleLabel = new QLabel ("A\nl\np\nh\na\n \ns\nc\na\nl\ni\nn\ng", scaleWidget);
+  scaleLabel->setAlignment (Qt::AlignHCenter);
+  scaleLayout->addWidget (scaleLabel);
+  QSlider * scaleBar = new QSlider ( Qt::Vertical, controlsWidget );
+  scaleLayout->addWidget (scaleBar);
   scaleBar->setMinimum ( 10 );
   scaleBar->setMaximum ( 1000 );
   scaleBar->setSliderPosition ( 100 );
-  scaleDock->setWidget ( scaleBar );
+  scaleBar->setTickPosition (QSlider::TicksRight);
+  controlsLayout->addWidget ( scaleWidget );
+
+  QWidget * numSlicesWidget = new QWidget (controlsWidget);
+  QLayout * numSlicesLayout = new QVBoxLayout (numSlicesWidget);
+  numSlicesWidget->setLayout (numSlicesLayout);
+  QLabel * numSlicesLabel = new QLabel ("Q\nu\na\nl\ni\nt\ny", numSlicesWidget);
+  numSlicesLabel->setAlignment (Qt::AlignHCenter);
+  numSlicesLayout->addWidget (numSlicesLabel);
+  QSlider * numSlicesBar = new QSlider ( Qt::Vertical, controlsWidget );
+  numSlicesLayout->addWidget (numSlicesBar);
+  numSlicesBar->setMinimum ( 1 );
+  numSlicesBar->setMaximum ( 10000 );
+  numSlicesBar->setSliderPosition ( 1000 );
+  controlsLayout->addWidget ( numSlicesWidget );
+
+  QCheckBox * realColorsCheckbox = new QCheckBox ("Real colors", controlsWidget);
+  controlsLayout->addWidget (realColorsCheckbox);
 
   w.setCentralWidget ( kvo );
   w.addDockWidget ( Qt::TopDockWidgetArea, tfR );
   w.addDockWidget ( Qt::TopDockWidgetArea, tfG );
   w.addDockWidget ( Qt::TopDockWidgetArea, tfB );
   w.addDockWidget ( Qt::TopDockWidgetArea, tfA );
-  w.addDockWidget ( Qt::LeftDockWidgetArea, sliceDock );
-  w.addDockWidget ( Qt::BottomDockWidgetArea, scaleDock );
+  w.addDockWidget ( Qt::LeftDockWidgetArea, controlsDock );
 
-  QObject::connect ( tfR, SIGNAL ( transferFunctionChanged ( const QVector<float> & ) ), kvo,
-    SLOT ( transferFunctionRChanged ( const QVector<float> & ) ) );
-  QObject::connect ( tfG, SIGNAL ( transferFunctionChanged ( const QVector<float> & ) ), kvo,
-    SLOT ( transferFunctionGChanged ( const QVector<float> & ) ) );
-  QObject::connect ( tfB, SIGNAL ( transferFunctionChanged ( const QVector<float> & ) ), kvo,
-    SLOT ( transferFunctionBChanged ( const QVector<float> & ) ) );
-  QObject::connect ( tfA, SIGNAL ( transferFunctionChanged ( const QVector<float> & ) ), kvo,
-    SLOT ( transferFunctionAChanged ( const QVector<float> & ) ) );
+  QObject::connect ( tfR, SIGNAL ( transferFunctionChanged ( const QVector<double> & ) ), kvo,
+    SLOT ( transferFunctionRChanged ( const QVector<double> & ) ) );
+  QObject::connect ( tfG, SIGNAL ( transferFunctionChanged ( const QVector<double> & ) ), kvo,
+    SLOT ( transferFunctionGChanged ( const QVector<double> & ) ) );
+  QObject::connect ( tfB, SIGNAL ( transferFunctionChanged ( const QVector<double> & ) ), kvo,
+    SLOT ( transferFunctionBChanged ( const QVector<double> & ) ) );
+  QObject::connect ( tfA, SIGNAL ( transferFunctionChanged ( const QVector<double> & ) ), kvo,
+    SLOT ( transferFunctionAChanged ( const QVector<double> & ) ) );
   QObject::connect ( sliceBar, SIGNAL ( valueChanged ( int ) ), kvo, SLOT ( sliceChanged ( int ) ) );
   QObject::connect ( scaleBar, SIGNAL ( valueChanged ( int ) ), kvo, SLOT ( scaleChanged ( int ) ) );
+  QObject::connect (numSlicesBar, SIGNAL(valueChanged(int)), kvo, SLOT(numSlicesChanged (int)));
+  QObject::connect (realColorsCheckbox, SIGNAL(stateChanged(int)), kvo, SLOT(realColorsChanged(int)));
 
   a.setActiveWindow ( &w );
   w.show ();
