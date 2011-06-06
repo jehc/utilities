@@ -8,8 +8,10 @@
 KVOViewerWidget::KVOViewerWidget ( const QGLFormat & format, QWidget * parent, const std::string & filename )
   : QGLView ( format, parent )
   , filename ( filename )
+  , numSlices (1000)
   , slice ( 1.0 )
   , scale ( 1.0 )
+  , realColors (0)
 {
 }
 
@@ -31,29 +33,17 @@ KVOViewerWidget::initializeGL ( QGLPainter * painter )
   std::cout << "Loaded kvo of size " << voxels.size ( 0 ) << " " << voxels.size ( 1 ) << " " << voxels.size (
     2 ) << std::endl;
 
-  initializeTexture ( voxels );
-
   initializeShaders ( painter );
 
-  initializeFBO (painter);
+  initializeTexture ( voxels );
 
   // Set the background to white
   glClearColor ( 1.0, 1.0, 1.0, 1.0 );
 
+  // Enable [1, 1-source alpha] blending program
+  glBlendFunc ( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+
   resizeGL ( width (), height () );
-}
-
-void
-KVOViewerWidget::initializeFBO (QGLPainter * painter)
-{
-  // Create the FBO
-  painter->glGenFramebuffers (1, &fbo);
-
-  // Create the color texture
-  glGenTextures (1, &fullScreenTexture);
-
-  // Unbind the FBO
-  painter->glBindFramebuffer (GL_FRAMEBUFFER, 0);
 }
 
 void
@@ -61,8 +51,8 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
 {
   transferFunction.resize ( 1024 * 4 );
 
-  // enable 1d textures
-  glEnable ( GL_TEXTURE_1D );
+  // Bind program
+  shaderProgram->bind();
 
   // create the texture
   glGenTextures ( 1, &transferFunctionTexture );
@@ -73,22 +63,13 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
   // interpolation stuff
   glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
   glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-  glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP );
+  glTexParameteri ( GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
 
   // create texture
   std::vector<GLfloat> tf ( 1024 );
 
   // copy buffer
   glTexImage1D ( GL_TEXTURE_1D, 0, GL_RGBA32F, 1024, 0, GL_ALPHA, GL_FLOAT, &tf [0] );
-
-  // unbind texture
-  glBindTexture ( GL_TEXTURE_1D, 0 );
-
-  // disable 1d textures
-  glDisable ( GL_TEXTURE_1D );
-
-  // enable 3d textures
-  glEnable ( GL_TEXTURE_3D );
 
   // create the texture
   glGenTextures ( 1, &voxelTexture );
@@ -99,9 +80,9 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
   // The magical parameters make the bad people go away
   glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
   glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP );
-  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP );
-  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
 
   // create buffer
   std::vector<GLfloat> buffer ( 4 * voxels.size ( 0 ) * voxels.size ( 1 ) * voxels.size ( 2 ) );
@@ -142,8 +123,8 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
   // unbind texture
   glBindTexture ( GL_TEXTURE_3D, voxelTexture );
 
-  // disable 3d textures
-  glDisable ( GL_TEXTURE_3D );
+  // Unbind program
+  shaderProgram->release();
 }
 
 void
@@ -169,13 +150,14 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
     "uniform sampler1D transferFunction;\n"
     "uniform float scale;\n"
     "uniform float slice;\n"
+    "uniform int realColors;\n"
     "varying vec3 coord;\n"
     "void\n"
     "main ()\n"
     "{\n"
     "  float v = texture3D (dataTex, coord).a;\n"
     "  float a0 = texture1D (transferFunction, v).a;\n"
-    "  vec3 c = texture1D (transferFunction, v).rgb;\n"
+    "  vec3 c = realColors != 0 ? texture3D (dataTex, coord).rgb : texture1D (transferFunction, v).rgb;\n"
     "  const float s0 = 500;\n"
     "  float a = (1 - pow(1 - a0, s0/samples));\n"
     "  gl_FragColor = (coord.t < slice) ? scale * a * vec4(c, 1.0) : vec4(0.0,0.0,0.0,0.0);\n"
@@ -198,6 +180,9 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
 
   // Get texture location
   textureLocation = shaderProgram->uniformLocation ( "dataTex" );
+
+  // Get real colors loation
+  realColorsLocation = shaderProgram->uniformLocation ("realColors");
 
   // Get transfer function location
   transferFunctionLocation = shaderProgram->uniformLocation ( "transferFunction" );
@@ -222,55 +207,6 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
 
   // Unbind program
   shaderProgram->release ();
-
-  // Create vertex shader source
-  const GLchar * fullScreenVertexShaderSource =
-    "attribute vec4 vertex;\n"
-    "attribute vec4 texCoord;\n"
-    "varying vec2 coord;\n"
-    "void\n"
-    "main ()\n"
-    "{\n"
-    "  coord = texCoord.st;\n"
-    "  gl_Position = vertex;\n"
-    "}";
-
-  // Create fragment shader source
-  const GLchar * fullScreenFragmentShaderSource =
-    "uniform sampler2D texture;\n"
-    "varying vec2 coord;\n"
-    "void\n"
-    "main ()\n"
-    "{\n"
-    "  gl_FragColor = texture2D (texture, coord);\n"
-    "}";
-
-  // Create shader program
-  fullScreenProgram = new QGLShaderProgram ( painter->context (), this );
-
-  // Attach vertex shader
-  fullScreenProgram->addShaderFromSourceCode ( QGLShader::Vertex, fullScreenVertexShaderSource );
-
-  // Attach fragment shader
-  fullScreenProgram->addShaderFromSourceCode ( QGLShader::Fragment, fullScreenFragmentShaderSource );
-
-  // Link shader program
-  fullScreenProgram->link ();
-
-  // Bind the program
-  fullScreenProgram->bind();
-
-  // Get texture location
-  fullScreenTextureLocation = fullScreenProgram->uniformLocation ( "texture" );
-
-  // Get vertex location
-  fullScreenVertexLocation = fullScreenProgram->attributeLocation ("vertex");
- 
-  // Get texcoord location
-  fullScreenTexcoordLocation = fullScreenProgram->attributeLocation ("texCoord");
-
-  // Unbind the program
-  fullScreenProgram->release();
 }
 
 void
@@ -291,25 +227,11 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   // Enable the shader program
   shaderProgram->bind ();
 
-  // Enable texture 2D
-  glEnable (GL_TEXTURE_2D);
+  // Create the FBO
+  QGLFramebufferObject fbo (width(), height(), QGLFramebufferObject::NoAttachment, GL_TEXTURE_2D, GL_RGBA32F);
 
   // Bind the FBO
-  painter->glBindFramebuffer (GL_FRAMEBUFFER, fbo);
-
-  // Use texture unit 2
-  glActiveTexture (GL_TEXTURE2);
-
-  // Bind the destination texture
-  glBindTexture (GL_TEXTURE_2D, fullScreenTexture);
-
-  // Generate storage for FBO
-  glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, width(), height(), 0, GL_RGBA, GL_FLOAT, NULL);
-
-  // Create color attachment for FBO
-  painter->glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fullScreenTexture, 0);
-
-  glViewport (0, 0, width(), height());
+  fbo.bind();
 
   // Get modelview matrix
   QMatrix4x4 qModelViewMatrix = camera ()->modelViewMatrix ();
@@ -328,12 +250,6 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   // Enable blending
   glEnable ( GL_BLEND );
 
-  // Enable [1, 1-source alpha] blending program
-  glBlendFunc ( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
-
-  // Enable texture 3D
-  glEnable ( GL_TEXTURE_3D );
-
   // Set texture unit 0 active
   painter->glActiveTexture ( GL_TEXTURE0 );
 
@@ -342,9 +258,6 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
 
   // Set texture uniform to texture unit 0
   shaderProgram->setUniformValue ( textureLocation, 0 );
-
-  // Enable texture 1D
-  glEnable ( GL_TEXTURE_1D );
 
   // Set texture unit 1 active
   painter->glActiveTexture ( GL_TEXTURE1 );
@@ -364,6 +277,9 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
 
   // Set slice
   shaderProgram->setUniformValue ( sliceLocation, (GLfloat) slice );
+
+  // Set real colors
+  shaderProgram->setUniformValue (realColorsLocation, (GLint)realColors);
 
   // Find corners
   std::vector<Eigen::Vector4d> corners;
@@ -436,7 +352,7 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   }
 
   // Generate slices
-  double sliceDelta = ( voxelMax - voxelMin ) * 0.5;
+  double sliceDelta = (max - min)/numSlices;//( voxelMax - voxelMin ) * 0.5;
   std::vector<std::vector<std::pair<double, Eigen::Vector4d> > > slices ( ( max - min ) / sliceDelta );
 #pragma omp parallel for
   for ( size_t s = 0; s < slices.size (); ++s )
@@ -555,18 +471,6 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   // Disable the tex coords
   shaderProgram->disableAttributeArray ( texCoordLocation );
 
-  // Unbind texture
-  glBindTexture ( GL_TEXTURE_1D, 0 );
-
-  // Disable texture 1D
-  glDisable ( GL_TEXTURE_1D );
-
-  // Unbind texture
-  glBindTexture ( GL_TEXTURE_3D, 0 );
-
-  // Disable texture 3D
-  glDisable ( GL_TEXTURE_3D );
-
   // Disable blending
   glDisable ( GL_BLEND );
 
@@ -574,68 +478,10 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   shaderProgram->release ();
 
   // Unbind FBO
-  painter->glBindFramebuffer (GL_FRAMEBUFFER, 0);
+  fbo.release();
 
-  glViewport (0,0,width(),height());
-
-  // Clear the viewport
-  glClear ( GL_COLOR_BUFFER_BIT );
-
-  // Bind the full screen program
-  fullScreenProgram->bind();
-
-  // Use texture unit 2
-  painter->glActiveTexture (GL_TEXTURE2);
-
-  // Bind texture
-  glBindTexture (GL_TEXTURE_2D, fullScreenTexture);
-
-  // Set texture uniform to texture unit 2
-  fullScreenProgram->setUniformValue (fullScreenTextureLocation, 2);
-
-  // Generate vertices
-  std::vector<QVector3D> fullScreenVertices;
-  fullScreenVertices.push_back (QVector3D (-1, -1, 0));
-  fullScreenVertices.push_back (QVector3D ( 1, -1, 0));
-  fullScreenVertices.push_back (QVector3D ( 1,  1, 0));
-  fullScreenVertices.push_back (QVector3D (-1,  1, 0));
-
-  // Copy vertices
-  fullScreenProgram->setAttributeArray ( fullScreenVertexLocation, &fullScreenVertices[0] );
-
-  // Enable the vertices
-  fullScreenProgram->enableAttributeArray ( fullScreenVertexLocation );
-
-  // Generate texcoords
-  std::vector<QVector3D> fullScreenTexcoords;
-  fullScreenTexcoords.push_back (QVector2D (0, 0));
-  fullScreenTexcoords.push_back (QVector2D (1, 0));
-  fullScreenTexcoords.push_back (QVector2D (1, 1));
-  fullScreenTexcoords.push_back (QVector2D (0, 1));
-
-  // Copy texcoords
-  fullScreenProgram->setAttributeArray ( fullScreenTexcoordLocation, &fullScreenTexcoords[0] );
-
-  // Enable the texcoords
-  fullScreenProgram->enableAttributeArray ( fullScreenTexcoordLocation );
-
-  // Draw the rectangle
-  glDrawArrays (GL_POLYGON, 0, 4);
-
-  // Disable the vertices
-  fullScreenProgram->disableAttributeArray ( fullScreenVertexLocation );
-
-  // Disable the texcoords
-  fullScreenProgram->disableAttributeArray ( fullScreenTexcoordLocation );
-
-  // Unbind the full screen program
-  fullScreenProgram->release();
-
-  // Unbind texture
-  glBindTexture (GL_TEXTURE_2D, 0);
-
-  // Disable texture 2D
-  glDisable (GL_TEXTURE_2D);
+  // Blit the FBO
+  QGLFramebufferObject::blitFramebuffer (0, QRect(0,0,width(),height()),&fbo,QRect(0,0,width(),height()));
 }
 
 void
@@ -681,8 +527,8 @@ KVOViewerWidget::transferFunctionAChanged ( const QVector<double> & transferFunc
 void
 KVOViewerWidget::transferFunctionChanged ()
 {
-  // enable 1d textures
-  glEnable ( GL_TEXTURE_1D );
+  // Bind the program
+  shaderProgram->bind();
 
   // bind the texture
   glBindTexture ( GL_TEXTURE_1D, transferFunctionTexture );
@@ -690,18 +536,16 @@ KVOViewerWidget::transferFunctionChanged ()
   // copy buffer
   glTexImage1D ( GL_TEXTURE_1D, 0, GL_RGBA32F, 1024, 0, GL_RGBA, GL_FLOAT, &transferFunction [0] );
 
-  // unbind texture
-  glBindTexture ( GL_TEXTURE_1D, 0 );
+  // Unbind the program
+  shaderProgram->release();
 
-  // disable 1d textures
-  glDisable ( GL_TEXTURE_1D );
   repaint ();
 }
 
 void
 KVOViewerWidget::sliceChanged ( int v )
 {
-  slice = 1.0 - v / 100.0;
+  slice = v / 100.0;
   repaint ();
 }
 
@@ -709,5 +553,19 @@ void
 KVOViewerWidget::scaleChanged ( int v )
 {
   scale = v / 100.0;
+  repaint ();
+}
+
+void
+KVOViewerWidget::numSlicesChanged (int n)
+{
+  numSlices = n;
+  repaint ();
+}
+
+void
+KVOViewerWidget::realColorsChanged (int state)
+{
+  realColors = state;
   repaint ();
 }
