@@ -1,5 +1,5 @@
 CXXFLAGS = -g
-INCLUDE = -I/home/kmatzen/local/include/eigen3
+INCLUDE = -I/usr/local/include/eigen3 -I/home/kmatzen/local/include/eigen3
 
 libBundleFile.a:	BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
 	ar rcs libBundleFile.a BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
