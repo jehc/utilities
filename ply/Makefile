@@ -1,4 +1,6 @@
-INCLUDE=-I/home/kmatzen/local/include/pcl-2.0 -I/home/kmatzen/local/include/eigen3
+CXXFLAGS=-g
+CFLAGS=-g
+INCLUDE=-I/home/kmatzen/local/include/pcl-1.0 -I/home/kmatzen/local/include/eigen3
 
 all: libply.a
 
@@ -6,10 +8,10 @@ libply.a:	ply.o ply_io.o
 	ar rcs libply.a ply.o ply_io.o
 
 ply.o:	ply.h ply.c
-	gcc ply.c -c -o ply.o
+	gcc $(CFLAGS) ply.c -c -o ply.o
 
 ply_io.o:	ply_io.h ply_io.cpp
-	g++ $(INCLUDE) ply_io.cpp -c -o ply_io.o
+	g++ $(CXXFLAGS) $(INCLUDE) ply_io.cpp -c -o ply_io.o
 
 install: libply.a
 	cp libply.a ../lib

@@ -6,9 +6,14 @@
 #include <pcl/point_types.h>
 
 union RgbConverter { float rgb; struct { unsigned char r; unsigned char g; unsigned char b; }; };
+union ByteExtractor { uint32_t rgba; uint8_t b[4]; };
 
 void savePlyFile (const std::string &, const pcl::PointCloud<pcl::PointXYZRGBNormal> &);
 
 void savePlyFile (const std::string &, const pcl::PointCloud<pcl::PointXYZRGB> &);
+
+void savePlyFile (const std::string &, const pcl::PointCloud<pcl::PointSurfel> &);
+
+void loadPlyFile (const std::string &, pcl::PointCloud<pcl::PointXYZ> &);
 
 #endif
