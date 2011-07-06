@@ -12,7 +12,7 @@ class BundleCamera
   Eigen::Vector3f t;
   friend std::istream & operator>> (std::istream &, BundleCamera &);
 public:
-  BundleCamera():valid(false){}
+  BundleCamera():valid(false),f(0),k1(0),k2(0){R.setZero(); t.setZero();}
   inline float GetF() const { return f; }
   inline float GetK1() const { return k1; }
   inline float GetK2() const { return k2; }
