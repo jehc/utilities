@@ -5,8 +5,8 @@
 TEMPLATE = app
 TARGET = 
 DEPENDPATH += .
-INCLUDEPATH += . /home/kmatzen/utilities/include /usr/include/pcl-1.0 /home/kmatzen/utilities/include /usr/local/include/eigen3
-LIBS += -L/home/kmatzen/utilities/lib -lBundleFile -lGLEW -lpcl_io -lply -lopencv_highgui 
+INCLUDEPATH += . /usr/local/include/pcl-1.0 /Users/kmatzen/utilities/include /home/kmatzen/utilities/include /usr/include/pcl-1.0 /home/kmatzen/utilities/include /usr/local/include/eigen3
+LIBS += -L/usr/local/lib -L/Users/kmatzen/utilities/lib -L/home/kmatzen/utilities/lib -lBundleFile -lGLEW -lpcl_io -lply -lopencv_highgui -lopencv_core -lpcl_common 
 
 QMAKE_CXXFLAGS += -fopenmp -DNDEBUG
 QMAKE_LFLAGS += -fopenmp

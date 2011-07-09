@@ -162,15 +162,15 @@ HighResViewerWidget::loadPoints()
 
   for (size_t i = 0; i < points.points.size(); ++i)
   {
-    if (isnan(points[i].x) || isnan(points[i].y) || isnan(points[i].z))
+    if (std::isnan(points.points[i].x) || std::isnan(points.points[i].y) || std::isnan(points.points[i].z))
     {
       continue;
     }
-    pointVertices [overlay].push_back (points [i].x);
-    pointVertices [overlay].push_back (points [i].y);
-    pointVertices [overlay].push_back (points [i].z);
+    pointVertices [overlay].push_back (points.points [i].x);
+    pointVertices [overlay].push_back (points.points [i].y);
+    pointVertices [overlay].push_back (points.points [i].z);
     ByteExtractor c;
-    c.rgba = points [i].rgba;
+    c.rgba = points.points [i].rgba;
     pointColors [overlay].push_back (c.b[0]);
     pointColors [overlay].push_back (c.b[1]);
     pointColors [overlay].push_back (c.b[2]);
@@ -208,9 +208,10 @@ HighResViewerWidget::initializeGL()
     "main()\n"
     "{\n"
     "  gl_Position = projection*modelviewinv*modelview*vec4(vertex, 1.0);\n"
-    "  gl_FrontColor = vec4(color, 1/(pow(gl_Position.z+1,2.0)));\n"
+    "  gl_FrontColor = vec4(color, 1.0/(pow(gl_Position.z+1.0,2.0)));\n"
     "  gl_Position.y = -gl_Position.y;\n"
-    "  gl_PointSize = min(1/pow(gl_Position.z + 1,2.0), 5);\n"
+    "  float size = 1.0/pow(gl_Position.z + 1.0,2.0);\n"
+    "  gl_PointSize = size > 5.0 ? 5.0 : size;\n"
     "}\n";
 
   const char * PointFShader = 
