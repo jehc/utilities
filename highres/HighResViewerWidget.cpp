@@ -209,7 +209,6 @@ HighResViewerWidget::initializeGL()
     "{\n"
     "  gl_Position = projection*modelviewinv*modelview*vec4(vertex, 1.0);\n"
     "  gl_FrontColor = vec4(color, 1.0/(pow(gl_Position.z+1.0,2.0)));\n"
-    "  gl_Position.y = -gl_Position.y;\n"
     "  float size = 1.0/pow(gl_Position.z + 1.0,2.0);\n"
     "  gl_PointSize = size > 5.0 ? 5.0 : size;\n"
     "}\n";
@@ -232,7 +231,6 @@ HighResViewerWidget::initializeGL()
     "{\n"
     "  texcoordvar = texcoord;\n"
     "  gl_Position = projection*vec4(vertex, 1.0);\n"
-    "  gl_Position.y = -gl_Position.y;\n"
     "}\n";
 
   const char * ImageFShader =
