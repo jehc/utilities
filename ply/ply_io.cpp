@@ -1,6 +1,7 @@
 #include "ply_io.h"
 #include "ply.h"
 #include <fstream>
+#include <cmath>
 
 void savePlyFileRangeImage (const std::string &, const pcl::PointCloud<pcl::PointXYZRGB> &);
 void savePlyFileRangeImage (const std::string &, const pcl::PointCloud<pcl::PointXYZRGBNormal> &);
@@ -171,7 +172,7 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
     for (int i = 0; i < pointCloud.width; ++i)
     {
       const pcl::PointSurfel & surfel = pointCloud (i, j);
-      if (!isnan (surfel.x) && !isnan (surfel.y) && !isnan (surfel.z))
+      if (!std::isnan (surfel.x) && !std::isnan (surfel.y) && !std::isnan (surfel.z))
       {
         PlySurfel s;
         s.x = surfel.x;
@@ -382,7 +383,7 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
     for (int i = 0; i < pointCloud.width; ++i)
     {
       const pcl::PointXYZRGB & vertex = pointCloud (i, j);
-      if (!isnan (vertex.x) && !isnan (vertex.y) && !isnan (vertex.z))
+      if (!std::isnan (vertex.x) && !std::isnan (vertex.y) && !std::isnan (vertex.z))
       {
         PlyVertex v;
         v.x = vertex.x;
@@ -586,7 +587,7 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
     for (int i = 0; i < pointCloud.width; ++i)
     {
       const pcl::PointXYZRGBNormal & vertex = pointCloud (i, j);
-      if (!isnan (vertex.x) && !isnan (vertex.y) && !isnan (vertex.z))
+      if (!std::isnan (vertex.x) && !std::isnan (vertex.y) && !std::isnan (vertex.z))
       {
         PlyVertexNormal v;
         v.x = vertex.x;
