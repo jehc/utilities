@@ -1,6 +1,6 @@
-CXXFLAGS=-fopenmp -g -gstabs3 -g3 -ggdb3 -ggdb -O0
+CXXFLAGS=-fopenmp -g
 INCLUDE=-I/home/kmatzen/local/include/pcl-1.0 -I/home/kmatzen/local/include/eigen3
-LIBS=-L/home/kmatzen/local/lib -lply -lopencv_core -lopencv_imgproc -lpcl_io -lboost_filesystem -lboost_thread -lm
+LIBS=-L/home/kmatzen/local/lib -lply -lkvo -lopencv_core -lopencv_imgproc -lpcl_io -lboost_filesystem -lboost_thread -lm
 
 all: ConvolutionDetection
 

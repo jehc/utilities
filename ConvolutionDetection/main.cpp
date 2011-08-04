@@ -1,10 +1,13 @@
-#include <string>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <opencv2/opencv.hpp>
+
+#include "kvo.h"
 #include "ply_io.h"
+
 #include <fstream>
 #include <cmath>
+#include <string>
 
 #include <sys/time.h>
 
@@ -238,27 +241,27 @@ getRegions ( const pcl::PointNormal & normal, std::vector<int> & regions )
   {
     regions.push_back ( 0 );
   }
-  else if ( normal.normal_x < -threshold )
+  if ( normal.normal_x < -threshold )
   {
     regions.push_back ( 1 );
   }
-  else if ( normal.normal_y > threshold )
+  if ( normal.normal_y > threshold )
   {
     regions.push_back ( 2 );
   }
-  else if ( normal.normal_y < -threshold )
+  if ( normal.normal_y < -threshold )
   {
     regions.push_back ( 3 );
   }
-  else if ( normal.normal_z > threshold )
+  if ( normal.normal_z > threshold )
   {
     regions.push_back ( 4 );
   }
-  else if ( normal.normal_z < -threshold )
+  if ( normal.normal_z < -threshold )
   {
     regions.push_back ( 5 );
   }
-  else
+  if (normal.normal_x < threshold && normal.normal_x > -threshold && normal.normal_y < threshold && normal.normal_y > -threshold && normal.normal_z < threshold && normal.normal_z > -threshold)
   {
     int dominantRegion =
       ( ( ( ( normal.normal_z >
@@ -294,7 +297,7 @@ getRegions ( const pcl::PointNormal & normal, std::vector<int> & regions )
 #endif
     regions.push_back ( dominantRegion );
   }
-
+#if 0
   switch ( regions[0] )
   {
   case 0:
@@ -409,6 +412,7 @@ getRegions ( const pcl::PointNormal & normal, std::vector<int> & regions )
     assert ( 0 );
     break;
   }
+#endif
 }
 
 pcl::PointNormal
@@ -523,6 +527,7 @@ generateLayers (
       {
         const pcl::PointNormal & normal = normalBins[i][j][k];
         getRegions ( normal, regions );
+        assert (regions.size() <= 1);
         for ( size_t q = 0; q < regions.size (); ++q )
         {
           ( *positiveLayers )[regions[q]][j].at<float>( i, k ) = 0; //regions.size();
@@ -530,7 +535,6 @@ generateLayers (
           ( *negativeLayers )[opposite ( regions[q] )][j].at<float>( i,
                                                                      k ) = 0; //regions.size();
 //          (*negativeLayers)[opposite(regions[q])][j_prime].at<float>(i, k) = abs(j - j_prime) * ((*negativeLayers)[opposite(regions[q])][j_prime].at<float>(i, k) + 1);
-          break;
         }
       }
     }
@@ -842,107 +846,29 @@ saveResponseMap ( const std::string & filename, const cv::Mat & responseMap )
   output.close ();
 }
 
-void saveLayers_char ( const std::string &                        filename,
-                       const std::vector<std::vector<cv::Mat> > & layers )
-{
-  pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
-#pragma omp parallel for
-  for ( int i = 0; i < layers.size (); ++i )
-  {
-    cv::Mat sum = cv::Mat::zeros ( layers[i][0].rows,
-                                   layers[i][0].cols,
-                                   CV_32FC1 );
-    for ( int j = 0; j < layers[i].size (); ++j )
-    {
-      for ( int k = 0; k < layers[i][j].rows; ++k )
-      {
-        for ( int l = 0; l < layers[i][j].cols; ++l )
-        {
-#if 0
-          if ( layers[i][j].at<char>( k, l ) )
-          {
-            pcl::PointXYZRGBNormal point;
-            point.x = 2 * k;
-            point.y = 2 * j;
-            point.z = 2 * l;
-            RgbConverter c;
-            pcl::PointNormal normal = region2Normal ( i );
-            point.normal_x = normal.normal_x *
-                             layers[i][j].at<char>( k, l ) / 127;
-            point.normal_y = normal.normal_y *
-                             layers[i][j].at<char>( k, l ) / 127;
-            point.normal_z = normal.normal_z *
-                             layers[i][j].at<char>( k, l ) / 127;
-            c.r = ( uchar )( 127 * point.normal_x + 128 );
-            c.g = ( uchar )( 127 * point.normal_y + 128 );
-            c.b = ( uchar )( 127 * point.normal_z + 128 );
-            point.rgb = c.rgb;
- #pragma omp critical
-            {
-              cloud.push_back ( point );
-            }
-          }
-#endif
-          sum.at<float> ( k, l ) += layers [i][j].at<char> ( k, l );
-        }
-      }
-    }
-    std::stringstream ss;
-    ss << "/home/kmatzen/NOBACKUP/" << filename << ".layer" << i << ".txt";
-    saveResponseMap ( ss.str (), sum );
-  }
-  savePlyFile ( filename, cloud );
-}
-
-void saveLayers_float ( const std::string &                        filename,
+void saveLayers ( const std::string &                        filename,
                         const std::vector<std::vector<cv::Mat> > & layers )
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal> cloud;
-#pragma omp parallel for
+//#pragma omp parallel for
   for ( int i = 0; i < layers.size (); ++i )
   {
-    cv::Mat sum = cv::Mat::zeros ( layers[i][0].rows,
-                                   layers[i][0].cols,
-                                   CV_32FC1 );
+    KVO voxels (layers[i][0].rows, layers[i].size(), layers[i][0].cols, 1, Eigen::Vector3f (0,0,0));
     for ( int j = 0; j < layers[i].size (); ++j )
     {
       for ( int k = 0; k < layers[i][j].rows; ++k )
       {
         for ( int l = 0; l < layers[i][j].cols; ++l )
         {
-#if 0
-          if ( layers[i][j].at<float>( k, l ) )
-          {
-            pcl::PointXYZRGBNormal point;
-            point.x = 2 * k;
-            point.y = 2 * j;
-            point.z = 2 * l;
-            RgbConverter c;
-            pcl::PointNormal normal = region2Normal ( i );
-            assert ( layers[i][j].at<float>( k, l ) > 0 );
-            point.normal_x = normal.normal_x * layers[i][j].at<float>( k, l );
-            point.normal_y = normal.normal_y * layers[i][j].at<float>( k, l );
-            point.normal_z = normal.normal_z * layers[i][j].at<float>( k, l );
-            c.r = ( uchar )( 127 * point.normal_x + 128 );
-            c.g = ( uchar )( 127 * point.normal_y + 128 );
-            c.b = ( uchar )( 127 * point.normal_z + 128 );
-            point.rgb = c.rgb;
- #pragma omp critical
-            {
-              cloud.push_back ( point );
-            }
-          }
-#endif
-          sum.at<float> ( k, l ) += layers [i][j].at<float> ( k, l );
+          voxels [k][j][l] = layers [i][j].at<float> ( k, l );
         }
       }
     }
     std::stringstream ss;
-    ss << "/home/kmatzen/NOBACKUP/" << filename << ".layer_dist" << i <<
-    ".txt";
-    saveResponseMap ( ss.str (), sum );
+    ss << filename << i << ".kvo";
+    std::cout << "Saving " << ss.str() << std::endl;
+    voxels.save (ss.str());
   }
-  savePlyFile ( filename, cloud );
 }
 
 void
@@ -1082,7 +1008,7 @@ main ( int argc, char * * argv )
   std::endl;
 
 #if 1
-  saveLayers_float ( "targetLayers.ply", *targetLayersPositiveBinary );
+  saveLayers ( "/home/kmatzen/NOBACKUP/targetLayersPositiveBinary", *targetLayersPositiveBinary );
 #endif
 
   std::cout << "Distance transforming target layers " << std::flush;
@@ -1101,7 +1027,7 @@ main ( int argc, char * * argv )
 #if 1
   std::cout << "Saving target distance transform " << std::flush;
   gettimeofday ( &tic, NULL );
-  saveLayers_float ( "targetDistanceTransform.ply", *targetLayersFilter );
+  saveLayers ( "/home/kmatzen/NOBACKUP/targetLayersFilter", *targetLayersFilter );
   gettimeofday ( &toc, NULL );
   std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
   std::endl;
@@ -1221,7 +1147,7 @@ main ( int argc, char * * argv )
     std::endl;
 
 #if 1
-    saveLayers_char ( "sourceLayers.ply", *sourceLayersPositiveBinary );
+    saveLayers ( "/home/kmatzen/NOBACKUP/sourceLayersPositiveBinary", *sourceLayersPositiveBinary );
 #endif
 
     std::cout << "Distance transforming source layers " << std::flush;
@@ -1239,7 +1165,7 @@ main ( int argc, char * * argv )
 #if 1
     std::cout << "Saving source distance transform " << std::flush;
     gettimeofday ( &tic, NULL );
-    saveLayers_float ( "sourceDistanceTransform.ply", *sourceLayersFilter );
+    saveLayers ( "/home/kmatzen/NOBACKUP/sourceLayersFilter", *sourceLayersFilter );
     gettimeofday ( &toc, NULL );
     std::cout << " complete in " << toc.tv_sec - tic.tv_sec << " seconds" <<
     std::endl;
