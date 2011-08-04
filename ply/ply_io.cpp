@@ -43,8 +43,159 @@ struct RangeGridPnt
 typedef struct VertexIn
 {
   float x, y, z;
+  float confidence;
   void * other_props;
 } PlyVertexIn;
+
+typedef struct FaceIn
+{
+  unsigned char nverts;
+  int * verts;
+  void * other_props;
+} PlyFaceIn;
+
+void
+loadPlyFileGL (const std::string & filename, std::vector<GLfloat> & vertices, std::vector<GLubyte> & colors, std::vector<GLuint> & indices)
+{
+  
+  static PlyProperty vert_props[] = {
+    {"x", Float32, Float32, offsetof(VertexIn,x), 0, 0, 0, 0},
+    {"y", Float32, Float32, offsetof(VertexIn,y), 0, 0, 0, 0},
+    {"z", Float32, Float32, offsetof(VertexIn,z), 0, 0, 0, 0},
+    {"confidence", Float32, Float32, offsetof(VertexIn,confidence), 0, 0, 0, 0}
+  };
+
+  static PlyProperty face_props[] = {
+    {"vertex_indices", Int32, Int32, offsetof(FaceIn,verts), 1, Uint8, Uint8, offsetof(FaceIn,nverts)}
+  };
+
+  FILE * file = fopen (filename.c_str(), "r");
+  if (!file)
+  {
+    std::cout << "Could not open " << filename << " for read." << std::endl;
+    throw std::exception();
+  }
+
+  PlyFile * ply = read_ply (file);
+
+  std::vector<float> confidences;
+  float max_confidence = 0;
+
+  std::vector<PlyFaceIn> faces;
+
+  for (int i = 0; i < ply->num_elem_types; ++i)
+  {
+    int elem_count;
+    char * elem_name = setup_element_read_ply (ply, i, &elem_count);
+    if (equal_strings ("vertex", elem_name))
+    {
+      setup_property_ply (ply, &vert_props[0]);
+      setup_property_ply (ply, &vert_props[1]);
+      setup_property_ply (ply, &vert_props[2]);
+      setup_property_ply (ply, &vert_props[3]);
+
+      get_other_properties_ply (ply, offsetof(VertexIn,other_props));
+
+      vertices.reserve (3*elem_count);
+      confidences.reserve (elem_count);
+
+      for (int j = 0; j < elem_count; ++j)
+      {
+        PlyVertexIn v;
+        get_element_ply (ply, (void *)&v);
+        // ply lib sucks so I have to fix the endianess manually
+        union Flipper { float f; uint8_t b [4]; } to1, to2, to3, to4, from1, from2, from3, from4;
+        from1.f = v.x;
+        from2.f = v.y;
+        from3.f = v.z;
+        from4.f = v.confidence;
+        for (int i = 0; i < 4; ++i)
+        {
+          if (ply->file_type == PLY_BINARY_BE)
+          {
+            to1.b[i] = from1.b[3 - i];
+            to2.b[i] = from2.b[3 - i];
+            to3.b[i] = from3.b[3 - i];
+            to4.b[i] = from4.b[3 - i];
+          }
+          else
+          {
+            to1.b[i] = from1.b[i];
+            to2.b[i] = from2.b[i];
+            to3.b[i] = from3.b[i];
+            to4.b[i] = from4.b[i];
+	  }
+        }
+        vertices.push_back (to1.f);
+        vertices.push_back (to2.f);
+        vertices.push_back (to3.f);
+        if (to1.f == 0)
+        {
+          std::cout << (unsigned int)from1.b[0] << " " << (unsigned int)from1.b[1] << " " << (unsigned int)from1.b[2] << " " << (unsigned int)from1.b[3] << std::endl;
+        }
+        confidences.push_back (to4.f);
+        if (to4.f > max_confidence)
+        {
+          max_confidence = to4.f;
+        }
+      }
+    }
+    else if (equal_strings ("face", elem_name))
+    {
+      setup_property_ply (ply, &face_props[0]);
+
+      get_other_properties_ply (ply, offsetof(FaceIn,other_props));
+ 
+      faces.resize (elem_count);
+
+      for (int j = 0; j < elem_count; ++j)
+      {
+        get_element_ply (ply, (void*)&faces[j]);
+      }
+    }
+    else
+    {
+      get_other_element_ply (ply);
+    }
+  }
+
+  colors.resize (3*confidences.size());
+  for (int i = 0; i < confidences.size(); ++i)
+  {
+    float scaled = confidences [i]/max_confidence;
+    colors [3*i] = colors [3*i+1] = colors [3*i+2] = 255*scaled;
+  }
+
+  indices.reserve (3*faces.size());
+
+  for (int i = 0; i < faces.size(); ++i)
+  {
+    assert (faces[i].nverts == 3);
+    for (int j = 0; j < faces[i].nverts; ++j)
+    {
+      union Flipper { uint32_t i; uint8_t b[4]; } to, from;
+      from.i = faces [i].verts [j];
+      for (int i = 0; i < 4; ++i)
+      {
+        if (ply->file_type == PLY_BINARY_BE)
+        {
+          to.b[i] = from.b[3 - i];
+        }
+        else
+        {
+          to.b[i] = from.b[i];
+        }
+      }
+      indices.push_back (to.i);
+    }
+  }
+
+  close_ply (ply);
+  free_ply (ply);
+
+  std::cout << vertices.size()/3 << " vertices" << std::endl;
+  std::cout << faces.size() << " faces" << std::endl;
+}
 
 void
 loadPlyFile (const std::string & filename, pcl::PointCloud<pcl::PointXYZ> & pointCloud)

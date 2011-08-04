@@ -27,7 +27,6 @@ std::istream & operator>> (std::istream & in, BundleCamera & camera)
       throw std::exception();
     }
   }
-  camera.valid = camera.f > 0;
   return in;
 }
 

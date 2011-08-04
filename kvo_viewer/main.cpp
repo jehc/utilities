@@ -72,8 +72,14 @@ main ( int argc, char * * argv )
   numSlicesBar->setSliderPosition ( 1000 );
   controlsLayout->addWidget ( numSlicesWidget );
 
-  QCheckBox * realColorsCheckbox = new QCheckBox ("Real colors", controlsWidget);
-  controlsLayout->addWidget (realColorsCheckbox);
+  QWidget * othersWidget = new QWidget (controlsWidget);
+  QLayout * othersLayout = new QVBoxLayout (othersWidget);
+  othersWidget->setLayout (othersLayout);
+  QCheckBox * realColorsCheckbox = new QCheckBox ("Real colors", othersWidget);
+  othersLayout->addWidget (realColorsCheckbox);
+  QCheckBox * lightingCheckbox = new QCheckBox ("Lighting", othersWidget);
+  othersLayout->addWidget (lightingCheckbox);
+  controlsLayout->addWidget (othersWidget);
 
   w.setCentralWidget ( kvo );
   w.addDockWidget ( Qt::TopDockWidgetArea, tfR );
@@ -94,6 +100,7 @@ main ( int argc, char * * argv )
   QObject::connect ( scaleBar, SIGNAL ( valueChanged ( int ) ), kvo, SLOT ( scaleChanged ( int ) ) );
   QObject::connect (numSlicesBar, SIGNAL(valueChanged(int)), kvo, SLOT(numSlicesChanged (int)));
   QObject::connect (realColorsCheckbox, SIGNAL(stateChanged(int)), kvo, SLOT(realColorsChanged(int)));
+  QObject::connect (lightingCheckbox, SIGNAL(stateChanged(int)), kvo, SLOT(lightingChanged(int)));
 
   a.setActiveWindow ( &w );
   w.show ();

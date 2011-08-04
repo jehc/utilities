@@ -17,6 +17,7 @@ std::string filename;
 int numSlices;
 
 GLuint voxelTexture;
+GLuint normalTexture;
 GLuint transferFunctionTexture;
 
 QGLShaderProgram * shaderProgram;
@@ -28,6 +29,7 @@ double voxelSize;
 double slice;
 double scale;
 int realColors;
+int lighting;
 
 std::vector<GLfloat> transferFunction;
 
@@ -40,6 +42,9 @@ int texCoordLocation;
 int scaleLocation;
 int sliceLocation;
 int realColorsLocation;
+int normalLocation;
+int lightingLocation;
+int lightLocation;
 
 void initializeTexture ( KVO & );
 void initializeShaders ( QGLPainter * );
@@ -75,6 +80,7 @@ void scaleChanged ( int );
 void sliceChanged ( int );
 void numSlicesChanged (int);
 void realColorsChanged (int);
+void lightingChanged (int);
 };
 
 #endif

@@ -6,6 +6,7 @@
 #include "BundleFile.h"
 
 #include <string>
+#include <queue>
 
 #include <pcl/io/pcd_io.h>
 #include <opencv2/opencv.hpp>
@@ -15,6 +16,7 @@ class HighResViewerWidget : public QGLWidget
 std::string bundleFile;
 std::string listFile;
 std::string tuningFile;
+std::string surfaceFile;
 std::vector<BundleCamera> cameras;
 std::vector<size_t> highres;
 std::vector<size_t> lowres;
@@ -27,12 +29,19 @@ std::vector<Eigen::Affine3d> pointTransformations;
 std::vector<cv::Mat> images;
 std::vector<float> focalLengths;
 std::vector<std::vector<GLfloat> > pointVertices;
-std::vector<std::vector<GLbyte> > pointColors;
+std::vector<std::vector<GLubyte> > pointColors;
 std::vector<std::vector<GLfloat> > imageVertices;
+std::vector<GLfloat> surfaceVertices;
+std::vector<GLuint> surfaceIndices;
+std::vector<GLubyte> surfaceColors;
 std::vector<GLfloat> imageTexcoords;
+std::vector<std::vector<GLuint> > indices;
+std::queue<int> pointsCached;
 int image;
 int overlay;
 bool displayImage;
+bool saveRangeFlag;
+bool surfaceMode;
 
 QGLShaderProgram * pointShader;
 int pointVertexLocation;
@@ -40,6 +49,12 @@ int pointColorLocation;
 int pointProjectionLocation;
 int pointModelviewLocation;
 int pointModelviewInvLocation;
+
+QGLShaderProgram * rangeShader;
+int rangeVertexLocation;
+int rangeProjectionLocation;
+int rangeModelviewLocation;
+int rangeModelviewInvLocation;
 
 QGLShaderProgram * imageShader;
 GLuint imageTexture;
@@ -52,9 +67,10 @@ void setPoints();
 void setImage();
 void loadImage();
 void loadPoints();
+void saveRange();
 
 public:
-HighResViewerWidget (QWidget *, const std::string &, const std::string &, const std::string &);
+HighResViewerWidget (QWidget *, const std::string &, const std::string &, const std::string &, const std::string &);
 void load();
 void initializeGL();
 void resizeGL (int, int);

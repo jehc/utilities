@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <fstream>
 
 #include "omp.h"
 
@@ -12,6 +13,7 @@ KVOViewerWidget::KVOViewerWidget ( const QGLFormat & format, QWidget * parent, c
   , slice ( 1.0 )
   , scale ( 1.0 )
   , realColors (0)
+  , lighting (0)
 {
 }
 
@@ -86,7 +88,12 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
 
   // create buffer
   std::vector<GLfloat> buffer ( 4 * voxels.size ( 0 ) * voxels.size ( 1 ) * voxels.size ( 2 ) );
-  double max = 0;
+  double max = -std::numeric_limits<double>::infinity();
+  double min = std::numeric_limits<double>::infinity();
+
+#if 0
+  std::ofstream outData ("data");
+#endif
 
   // populate buffer
   for ( size_t j = 0; j < voxels.size ( 1 ); ++j )
@@ -95,33 +102,133 @@ KVOViewerWidget::initializeTexture ( KVO & voxels )
     {
       for ( size_t i = 0; i < voxels.size ( 0 ); ++i )
       {
-        if (voxels[i][j][k].a > max)
+        if (voxels[i][j][k].a > max && !isnan (voxels[i][j][k].a) && !isinf (voxels[i][j][k].a))
         {
           max = voxels[i][j][k].a;
+std::cout << max << " " << min << std::endl;
+        }
+        if (voxels[i][j][k].a < min && !isnan (voxels[i][j][k].a) && !isinf (voxels[i][j][k].a))
+        {
+          min = voxels[i][j][k].a;
+std::cout << max << " " << min << std::endl;
         }
       }
     }
   }
-    for ( size_t k = 0; k < voxels.size ( 2 ); ++k ) // depth
+  for ( size_t k = 0; k < voxels.size ( 2 ); ++k ) // depth
   {
-      for ( size_t i = 0; i < voxels.size ( 0 ); ++i ) //width
+    for ( size_t i = 0; i < voxels.size ( 0 ); ++i ) //width
     {
-  for ( size_t j = 0; j < voxels.size ( 1 ); ++j ) // height
+      for ( size_t j = 0; j < voxels.size ( 1 ); ++j ) // height
       {
-        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] = isnan(voxels[i][j][k].a) ? 0.5/1024.0 : (1023.0*voxels[i][j][k].a / max + 0.5)/1024.0;
+#if 0
+        outData << voxels[i][j][k].a << std::endl;
+#endif
+//        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] = (isnan(voxels[i][j][k].a) || isinf(voxels[i][j][k].a)) ? 1023.5/1024.0 : (1023.0*(voxels[i][j][k].a - min) / (max - min) + 0.5)/1024.0;
+        buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] = (isnan(voxels[i][j][k].a) || isinf(voxels[i][j][k].a)) ? 512.0/1024.0 : (voxels[i][j][k].a > 0 ? 1023.5/1024.0 : 0.5/1024.0);
+
+        std::vector<float> neighbors;
+        float value = voxels [i][j][k].a;
+        for (int i_n = std::max (0, (int)i - 1); i_n <= std::min((int)voxels.size(0) - 1, (int)i + 1); ++i_n)
+        {
+          for (int j_n = std::max(0, (int)j - 1); j_n <= std::min((int)voxels.size(1) - 1, (int)j + 1); ++j_n)
+          {
+            for (int k_n = std::max(0, (int)k - 1); k_n <= std::min((int)voxels.size (2) - 1, (int)k + 1); ++k_n)
+            {
+              neighbors.push_back (voxels [i_n][j_n][k_n].a);
+            }
+          }
+        }
+        bool boundary = false;
+        for (int n = 0; n < (int)neighbors.size(); ++n)
+        {
+          if ((value > 0 && neighbors [n] < 0) || (value < 0 && neighbors [n] > 0))
+          {
+            boundary = true;
+            break;
+          }
+        }
+ 
+ //       buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] = (isnan(value) || isinf (value) || !boundary) ? 0.5/1024.0 : 1023.5/1024.0;
+
+       //std::cout << buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] << std::endl;
         buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k)] = isnan(voxels[i][j][k].r) ? 0.0 : voxels[i][j][k].r / 255.0;
         buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 1] = isnan(voxels[i][j][k].g) ? 0.0 : voxels[i][j][k].g / 255.0;
         buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 2] = isnan(voxels[i][j][k].b) ? 0.0 : voxels[i][j][k].b / 255.0;
       }
     }
   }
+#if 0
+  outData.close();
+#endif
 
   // copy buffer
   glTexImage3D ( GL_TEXTURE_3D, 0, GL_RGBA32F, voxels.size ( 0 ), voxels.size ( 1 ), voxels.size (
       2 ), 0, GL_RGBA, GL_FLOAT, &buffer [0] );
 
   // unbind texture
-  glBindTexture ( GL_TEXTURE_3D, voxelTexture );
+  glBindTexture ( GL_TEXTURE_3D, 0 );
+
+  // create the texture
+  glGenTextures ( 1, &normalTexture );
+
+  // bind the texture
+  glBindTexture ( GL_TEXTURE_3D, normalTexture );
+
+  // The magical parameters make the bad people go away
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+  glTexParameteri ( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
+
+#if 0
+  std::ofstream outNormals ("normals");
+#endif
+
+  // create buffer
+  std::vector<GLfloat> normalBuffer ( 3 * voxels.size ( 0 ) * voxels.size ( 1 ) * voxels.size ( 2 ) );
+  for ( size_t k = 0; k < voxels.size ( 2 ); ++k ) // depth
+  {
+    for ( size_t i = 0; i < voxels.size ( 0 ); ++i ) //width
+    {
+      for ( size_t j = 0; j < voxels.size ( 1 ); ++j ) // height
+      {
+        GLfloat & x = normalBuffer[3*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k)];
+        GLfloat & y = normalBuffer[3*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 1];
+        GLfloat & z = normalBuffer[3*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 2];
+        if (i == 0 || j == 0 || k == 0 || i == voxels.size (0) - 1 || j == voxels.size (1) - 1 || k == voxels.size (2) - 1)
+        {
+          x = y = z = 0;
+          continue;
+        } 
+        x = buffer[4*(j*voxels.size (0) + (i+1) + voxels.size (1)*voxels.size (0)*k) + 3] - buffer[4*(j*voxels.size (0) + (i-1) + voxels.size (1)*voxels.size (0)*k) + 3];
+        y = buffer[4*((j+1)*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3] - buffer[4*((j-1)*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*k) + 3];
+        z = buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*(k+1)) + 3] - buffer[4*(j*voxels.size (0) + i + voxels.size (1)*voxels.size (0)*(k-1)) + 3];
+        float norm = sqrt(x*x + y*y + z*z);
+        if (norm > 0)
+        {
+          x /= norm;
+          y /= norm;
+          z /= norm; 
+        }
+#if 0
+        outNormals << norm << std::endl;
+#endif
+      }
+    }
+  }
+
+#if 0
+  outNormals.close();
+#endif
+
+  // copy buffer
+  glTexImage3D ( GL_TEXTURE_3D, 0, GL_RGBA32F, voxels.size ( 0 ), voxels.size ( 1 ), voxels.size (
+      2 ), 0, GL_RGB, GL_FLOAT, &normalBuffer [0] );
+
+  // unbind texture
+  glBindTexture ( GL_TEXTURE_3D, 0 );
 
   // Unbind program
   shaderProgram->release();
@@ -135,29 +242,41 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
     "attribute vec4 vertex;\n"
     "attribute vec4 texCoord;\n"
     "uniform mat4 projectionMatrix;\n"
+    "uniform vec3 light;\n"
     "varying vec3 coord;\n"
+    "varying vec3 position;\n"
     "void\n"
     "main ()\n"
     "{\n"
     "  coord = texCoord.stp;\n"
     "  gl_Position = projectionMatrix * vertex;\n"
+    "  position = normalize(light - gl_Position.xyz);\n"
     "}";
 
   // Create fragment shader source
   const GLchar * fragmentShaderSource =
     "uniform float samples;\n"
     "uniform sampler3D dataTex;\n"
+    "uniform sampler3D normalTex;\n"
     "uniform sampler1D transferFunction;\n"
     "uniform float scale;\n"
     "uniform float slice;\n"
     "uniform int realColors;\n"
+    "uniform int lighting;\n"
     "varying vec3 coord;\n"
+    "varying vec3 position;\n"
     "void\n"
     "main ()\n"
     "{\n"
     "  float v = texture3D (dataTex, coord).a;\n"
     "  float a0 = texture1D (transferFunction, v).a;\n"
     "  vec3 c = realColors != 0 ? texture3D (dataTex, coord).rgb : texture1D (transferFunction, v).rgb;\n"
+    "  if (lighting != 0)\n"
+    "  {\n"
+    "    vec3 normal = texture3D (normalTex, coord).xyz;\n"
+    "    float diffuse = abs (dot (normal, position));\n"
+    "    c = diffuse*c;\n"
+    "  }\n"
     "  const float s0 = 500;\n"
     "  float a = (1 - pow(1 - a0, s0/samples));\n"
     "  gl_FragColor = (coord.t < slice) ? scale * a * vec4(c, 1.0) : vec4(0.0,0.0,0.0,0.0);\n"
@@ -181,8 +300,17 @@ KVOViewerWidget::initializeShaders ( QGLPainter * painter )
   // Get texture location
   textureLocation = shaderProgram->uniformLocation ( "dataTex" );
 
-  // Get real colors loation
+  // Get normal texture location
+  normalLocation = shaderProgram->uniformLocation ("normalTex");
+
+  // Get real colors location
   realColorsLocation = shaderProgram->uniformLocation ("realColors");
+
+  // Get lighting location
+  lightingLocation = shaderProgram->uniformLocation ("lighting");
+
+  // Get light location
+  lightLocation = shaderProgram->uniformLocation ("light");
 
   // Get transfer function location
   transferFunctionLocation = shaderProgram->uniformLocation ( "transferFunction" );
@@ -250,6 +378,15 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
   // Enable blending
   glEnable ( GL_BLEND );
 
+  // Set texture unit 3 active
+  painter->glActiveTexture (GL_TEXTURE3);
+
+  // Bind texture
+  glBindTexture (GL_TEXTURE_3D, normalTexture);
+
+  // Set texture uniform to texture unit 3);
+  shaderProgram->setUniformValue (normalLocation, 3);
+
   // Set texture unit 0 active
   painter->glActiveTexture ( GL_TEXTURE0 );
 
@@ -280,6 +417,13 @@ KVOViewerWidget::paintGL ( QGLPainter * painter )
 
   // Set real colors
   shaderProgram->setUniformValue (realColorsLocation, (GLint)realColors);
+
+  // Set lighting
+  shaderProgram->setUniformValue (lightingLocation, (GLint)lighting);
+
+  // Set light
+  const QVector3D & light = camera()->eye();
+  shaderProgram->setUniformValue (lightLocation, light);
 
   // Find corners
   std::vector<Eigen::Vector4d> corners;
@@ -567,5 +711,12 @@ void
 KVOViewerWidget::realColorsChanged (int state)
 {
   realColors = state;
+  repaint ();
+}
+
+void
+KVOViewerWidget::lightingChanged (int state)
+{
+  lighting = state;
   repaint ();
 }
