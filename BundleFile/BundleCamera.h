@@ -11,6 +11,7 @@ class BundleCamera
   Eigen::Matrix3f R;
   Eigen::Vector3f t;
   friend std::istream & operator>> (std::istream &, BundleCamera &);
+  friend std::ostream & operator<< (std::ostream &, const BundleCamera &);
 public:
   BundleCamera():valid(false),f(0),k1(0),k2(0){R.setZero(); t.setZero();}
   inline float GetF() const { return f; }

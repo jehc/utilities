@@ -13,7 +13,9 @@ class BundleFile
   public:
   BundleFile (const std::string &);
   inline const std::vector<BundleCamera> & GetCameras() const { return cameras; }
-  inline const std::vector<BundlePoint> & GetPoints() const { return points; }
+  inline const std::vector<BundlePoint> & GetPoints() const { return points; } 
+  inline void AddPoint (const BundlePoint & point) { points.push_back (point); }
+  void save (const std::string & filename);
 };
 
 #endif
