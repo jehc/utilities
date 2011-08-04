@@ -31,14 +31,15 @@ printCommand ( int argc, char * * argv )
   std::cout << std::endl;
 } 
   
-pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
+pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   const std::string &     colorFilename,
   const std::string &     depthFilename,
   const BundleCamera &    camera,
   float                   scale,
-  const cv::Mat & a, const cv::Mat & b, const cv::Mat & c)
+  const cv::Mat & a, const cv::Mat & b, const cv::Mat & c,
+  std::vector<float> & variances)
 {
-  pcl::PointCloud<pcl::PointSurfel>::Ptr points ( new pcl::PointCloud<pcl::PointSurfel>() );
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
   cv::Mat colorImageDist = cv::imread ( colorFilename );
   
@@ -48,10 +49,6 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
     std::cout << "Could not load file " << depthFilename << std::endl;
     return points;
   }
-
-  points->width = colorImageDist.cols;
-  points->height = colorImageDist.rows;
-  points->points.resize (colorImageDist.cols*colorImageDist.rows);
 
   uint32_t rows, cols;
   if ( !depthInput.read ( ( char * )&rows, sizeof ( uint32_t ) ) )
@@ -172,7 +169,7 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
       Eigen::Vector3f diff = -p;
       diff.normalize ();
 
-      pcl::PointSurfel point;
+      pcl::PointXYZRGBNormal point;
       point.x = p[0];
       point.y = p[1];
       point.z = p[2];
@@ -181,13 +178,6 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
       point.normal_x = diff [0];
       point.normal_y = diff [1];
       point.normal_z = diff [2];
-
-      //TODO
-      point.curvature = std::numeric_limits<float>::quiet_NaN();
-     
-      point.radius = std::numeric_limits<float>::quiet_NaN();
-
-      point.confidence = 1.0/var;
 
       if ( isnan ( point.x ) || isnan ( point.y ) || isnan ( point.z ) )
       {
@@ -203,13 +193,13 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
       }
 
       const cv::Vec3b & color = colorImage.at<cv::Vec3b>( indexJ, indexI );
-      ByteExtractor be;
-      be.b[0] = color[2];
-      be.b[1] = color[1];
-      be.b[2] = color[0];
-      be.b[3] = 255;
-      point.rgba = be.rgba;
+      RgbConverter c;
+      c.r = color[2];
+      c.g = color[1];
+      c.b = color[0];
+      point.rgb = c.rgb;
       points->push_back (point);
+      variances.push_back (var);
     }
   }
 
@@ -308,6 +298,11 @@ struct Options
   }
 };
 
+void
+icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1)
+{
+}
+
 int
 main ( int argc, char * * argv )
 {
@@ -394,7 +389,8 @@ main ( int argc, char * * argv )
   const std::vector<BundleCamera> & cameras = file.GetCameras();
 
   size_t list_index = options.listFile.find_last_of ( "/" );
-  std::vector<pcl::PointCloud<pcl::PointSurfel>::Ptr> clouds (imageList.size());
+  std::vector<pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr> clouds (imageList.size());
+  std::vector<std::vector<float> > variances (imageList.size());
   TIME_BEGIN ( "Loading all point clouds" )
 #pragma omp parallel for
   for ( int i = 0; i < ( int )imageList.size (); ++i )
@@ -427,12 +423,12 @@ main ( int argc, char * * argv )
     std::cout << "Opening " << colorFilename << std::endl;
     std::string depthFilename ( colorFilename );
     depthFilename.replace ( replacement, suffix.size(), "depth.raw" );
-    pcl::PointCloud<pcl::PointSurfel>::Ptr points = LoadCloud (
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
       colorFilename,
       depthFilename,
       cameras[i],
       scales[i],
-      a, b, c);
+      a, b, c, variances[i]);
     if (points->size() == 0)
     {
       continue;
@@ -440,6 +436,25 @@ main ( int argc, char * * argv )
     clouds [i] = points;
   }
   TIME_END
+
+  TIME_BEGIN ("All pairs ICP")
+#pragma omp parallel for
+  for (int i = 0; i < (int)clouds.size(); ++i)
+  {
+    if (!clouds[i])
+    {
+      continue;
+    }
+    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree (new pcl::KdTreeFLANN<pcl::PointXYZRGBNormal>());
+    tree->setInputCloud (clouds[i]);
+    for (size_t j = i + 1; j < clouds.size(); ++j)
+    {
+      icp_align (clouds[i], clouds[j], tree);
+    }
+  }
+  TIME_END
+
+  file.save (options.output);
 
   return 0;
 }
