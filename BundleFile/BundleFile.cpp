@@ -38,7 +38,7 @@ BundleFile::BundleFile (const std::string & filename)
 }
 
 void
-BundleFile::save (const std::string & filename)
+BundleFile::save (const std::string & filename) const
 {
   std::ofstream output (filename.c_str());
   if (!output)
