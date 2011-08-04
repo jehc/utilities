@@ -36,3 +36,27 @@ BundleFile::BundleFile (const std::string & filename)
  
   input.close();
 }
+
+void
+BundleFile::save (const std::string & filename)
+{
+  std::ofstream output (filename.c_str());
+  if (!output)
+  {
+    throw std::exception();
+  }
+
+  output << cameras.size() << " " << points.size() << std::endl;
+
+  for (size_t i = 0; i < cameras.size(); ++i)
+  {
+    output << cameras [i] << std::endl;
+  }
+
+  for (size_t i = 0; i < points.size(); ++i)
+  {
+    output << points [i] << std::endl;
+  }
+
+  output.close();
+}

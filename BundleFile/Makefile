@@ -1,12 +1,17 @@
-CXXFLAGS = -g
+MAJOR=0
+MINOR=0
+REVISION=1
+CXXFLAGS = -g -fPIC -Wall
 INCLUDE = -I/usr/local/include/eigen3 -I/home/kmatzen/local/include/eigen3
 
-libBundleFile.a:	BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
-	ar rcs libBundleFile.a BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
+libbundlefile.so.$(MAJOR).$(MINOR).$(REVISION): BundleFile.o BundlePoint.o BundleView.o BundleCamera.o
+	gcc -shared -Wl,-soname,libbundlefile.so.$(MAJOR) -o libbundlefile.so.$(MAJOR).$(MINOR).$(REVISION) BundleFile.o BundlePoint.o BundleView.o BundleCamera.o -lc
 
-install:	libBundleFile.a
+install: libbundlefile.so.$(MAJOR).$(MINOR).$(REVISION)
 	mkdir -p ~/utilities/lib
-	cp libBundleFile.a ~/utilities/lib
+	cp libbundlefile.so.$(MAJOR).$(MINOR).$(REVISION) ~/utilities/lib
+	ln -s -f /home/kmatzen/utilities/lib/libbundlefile.so.$(MAJOR).$(MINOR).$(REVISION) /home/kmatzen/utilities/lib/libbundlefile.so
+	ln -s -f /home/kmatzen/utilities/lib/libbundlefile.so.$(MAJOR).$(MINOR).$(REVISION) /home/kmatzen/utilities/lib/libbundlefile.so.$(MAJOR)
 	mkdir -p ~/utilities/include
 	cp BundleFile.h ~/utilities/include
 	cp BundlePoint.h ~/utilities/include
@@ -26,4 +31,4 @@ BundleCamera.o:	BundleCamera.h BundleCamera.cpp
 	g++ $(CXXFLAGS) $(INCLUDE) BundleCamera.cpp -c -o BundleCamera.o
 
 clean:
-	rm *.o libBundleFile.a
+	rm *.o libbundlefile.so*

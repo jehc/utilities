@@ -11,3 +11,10 @@ std::istream & operator>> (std::istream & in, BundleView & view)
 
   return in;
 }
+
+std::ostream & operator<< (std::ostream & out, const BundleView & view)
+{
+  out << view.camera << " " << view.key << " " << view.x << " " << view.y;
+
+  return out;
+}

@@ -4,7 +4,7 @@
 
 std::istream & operator>> (std::istream & in, BundleCamera & camera)
 {
-  if (!(in >> camera.f >> camera.k1 >> camera.k1))
+  if (!(in >> camera.f >> camera.k1 >> camera.k2))
   {
     throw std::exception();
   }
@@ -29,4 +29,15 @@ std::istream & operator>> (std::istream & in, BundleCamera & camera)
   }
   camera.valid = camera.f > 0;
   return in;
+}
+
+std::ostream & operator<< (std::ostream & out, const BundleCamera & camera)
+{
+  out << camera.f << " " << camera.k1 << " " << camera.k2 << std::endl;
+
+  out << camera.R << std::endl;
+
+  out << camera.t.transpose();
+
+  return out;
 }

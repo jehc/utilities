@@ -9,14 +9,15 @@ BundlePoint::BundlePoint (const Eigen::Vector3f & position, const Eigen::Vector3
 
 std::ostream & operator<< (std::ostream & out, const BundlePoint & point)
 {
-  for (int i = 0; i < 3; ++i)
-  {
-    out << point.position[i] << " ";
-  }
+  out << point.position.transpose() << " ";
 
-  for (int i = 0; i < 3; ++i)
+  out << point.color.transpose() << " ";
+
+  out << point.views.size() << " ";
+
+  for (size_t i = 0; i < point.views.size(); ++i)
   {
-    out << (unsigned int)point.color[i] << " ";
+    out << point.views [i] << " ";
   }
 
   return out;
