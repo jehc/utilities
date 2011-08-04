@@ -2,38 +2,108 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <opencv2/opencv.hpp>
+#include <omp.h>
 
-float
-depthFromRaw (const std::vector<std::string> & depthFiles, const BundleView & view, std::vector<std::vector<float> > & depthCache, std::vector<bool> & cached)
+std::pair<float,float>
+depthFromRaw (const std::vector<std::string> & depthFiles, const BundleView & view, std::vector<cv::Mat> & depthCache, std::vector<bool> & cached, const cv::Mat & a, const cv::Mat & b, const cv::Mat & c, const BundleCamera & camera)
 {
   const std::string & depthFile = depthFiles [view.GetCamera()];
+#pragma omp critical
   if (!cached [view.GetCamera()])
   {
-    if (depthFile == "")
+    if (depthFile != "")
     {
-      return 0;
-    }
     std::ifstream input (depthFile.c_str());
     if (!input)
     {
       std::cerr << "Failed to open file " << depthFile << std::endl;
       throw std::exception();
     }
-    std::vector<float> depthBuffer (640*480);
-    if (!input.read((char*)&depthBuffer[0], 640*480*sizeof(float)))
+    uint32_t rows, cols;
+    input.read((char*)&rows, sizeof(uint32_t));
+    input.read((char*)&cols, sizeof(uint32_t));
+    cv::Mat depthBuffer (rows, cols, CV_32FC1);
+    if (!input.read((char*)depthBuffer.data, 640*480*sizeof(float)))
     {
       std::cerr << "Failed to read file " << depthFile << std::endl;
       throw std::exception();
     }
+
     depthCache [view.GetCamera()] = depthBuffer;
     cached [view.GetCamera()] = true;
+    }
   }
-
-  const std::vector<float> & map = depthCache [view.GetCamera()];
-  
+  bool found;
+#pragma omp critical
+  found = cached [view.GetCamera()];
+  if (!found)
+  {
+    return std::make_pair(std::numeric_limits<float>::quiet_NaN(), 0);
+  }
+  const cv::Mat & map = depthCache [view.GetCamera()];
   int indexI = (int)(view.GetX() + 320);
   int indexJ = (int)(240 - view.GetY());
-  return map[indexJ*640 + indexI];
+  assert (indexI >= 0 && indexI < 640 && indexJ >= 0 && indexJ < 480);
+  Eigen::Matrix3f K;
+  K << camera.GetF(), 0, 320,
+       0, camera.GetF(), 240,
+       0, 0, 1;
+  Eigen::Matrix3f Kinv = K.inverse();
+  float sum = 0;
+  float sum_sq = 0;
+  int n = 0;
+  for (int i = std::max(indexI - 5, 0); i <= std::min(indexI + 5, 639); ++i)
+  {
+    for (int j = std::max(indexJ - 5, 0); j <= std::min(indexJ + 5, 479); ++j)
+    {
+      float depth = map.at<float>(j, i);
+      if (depth == 0)
+      {
+        continue;
+      }
+      float value =  a.at<float>(j, i)*pow(depth, 2.0f) + b.at<float>(j, i)*depth + c.at<float>(j, i);
+      if (value <= 0)
+      {
+        continue;
+      }
+      Eigen::Vector3f point((float)i, 479.0 - (float)j, 1);
+      point = value * Kinv * point;
+      float result = point.norm();
+      sum += result;
+      ++n;
+    }
+  }
+  if (n < 2)
+  {
+    return std::make_pair(std::numeric_limits<float>::quiet_NaN(), 0);
+  }
+  float mean = sum/n;
+  assert (mean >= 0);
+  for (int i = std::max(indexI - 5, 0); i <= std::min(indexI + 5, 639); ++i)
+  {
+    for (int j = std::max(indexJ - 5, 0); j <= std::min(indexJ + 5, 479); ++j)
+    {
+      float depth = map.at<float>(j, i);
+      if (depth == 0)
+      {
+        continue;
+      }
+      float value =  a.at<float>(j, i)*pow(depth, 2.0f) + b.at<float>(j, i)*depth + c.at<float>(j, i);
+      if (value <= 0)
+      {
+        continue;
+      }
+      Eigen::Vector3f point((float)i, 479.0 - (float)j, 1);
+      point = value * Kinv * point;
+      float result = point.norm();
+      sum_sq += pow(result - mean, 2.0f);
+    }
+  }
+ 
+  float var = sum_sq/(n-1);
+  assert (var > 0);
+  return std::make_pair (mean, var);
 }
 
 float
@@ -41,14 +111,15 @@ depthFromBundle (const std::vector<BundleCamera> & cameras, const BundlePoint & 
 {
   const BundleCamera & camera = cameras [view.GetCamera()];
   assert (camera.IsValid());
-  const cv::Mat & R = camera.GetR();
-  const cv::Mat & t = camera.GetT();
-  cv::Mat p = cv::Mat(point.GetPosition());
-  cv::Mat center = -R.inv() * t;
-  cv::Mat b = p - center;
-  cv::Mat z = cv::Mat(cv::Vec3f(0, 0, -1));
-  z = R.inv() * z;
-  return z.at<float>(0, 0)*b.at<float>(0, 0) + z.at<float>(1, 0)*b.at<float>(1, 0) + z.at<float>(2, 0)*b.at<float>(2, 0);;
+  const Eigen::Matrix3f & R = camera.GetR();
+  const Eigen::Vector3f & t = camera.GetT();
+  Eigen::Vector3f p = point.GetPosition();
+  Eigen::Vector3f center = -R.transpose() * t;
+//  Eigen::Vector3f b = p - center;
+//  Eigen::Vector3f z (0, 0, -1);
+//  z = R.transpose() * z;
+//  return z.dot(b);
+  return (p - center).norm();
 }
 
 int
@@ -62,7 +133,7 @@ main (int argc, char ** argv)
   BundleFile bundle (argv[1]);
 
   std::vector<std::pair<float, float> > dataPoints;
-  std::vector<std::vector<float> > depthCache;
+  std::vector<cv::Mat> depthCache;
   std::vector<bool> cached;
 
   std::string junk;
@@ -90,55 +161,72 @@ main (int argc, char ** argv)
   const std::vector<BundleCamera> & cameras = bundle.GetCameras();
   const std::vector<BundlePoint> & points = bundle.GetPoints();
 
+  cv::Mat a (480, 640, CV_32FC1);
+  cv::Mat b (480, 640, CV_32FC1);
+  cv::Mat c (480, 640, CV_32FC1);
+  std::ifstream ain ("/hydra/S2/kmatzen/09July2011_calib/a.txt");
+  std::ifstream bin ("/hydra/S2/kmatzen/09July2011_calib/b.txt");
+  std::ifstream cin ("/hydra/S2/kmatzen/09July2011_calib/c.txt");
+  for (int i = 0; i < 640; ++i)
+  {
+    for (int j = 0; j < 480; ++j)
+    { 
+      ain >> a.at<float>(j, i);
+      bin >> b.at<float>(j, i);
+      cin >> c.at<float>(j, i);
+      assert (ain && bin && cin);
+    }
+  }
+  ain.close();
+  bin.close();
+  cin.close();
+
+  std::vector<int> goodPoints (points.size());
+#pragma omp parallel for
+  for (int i = 0; i < points.size(); ++i)
+  {
+    const BundlePoint & point = points [i];
+    const std::vector<BundleView> & views = point.GetViews();
+    for (std::vector<BundleView>::const_iterator j = views.begin(); j != views.end(); ++j)
+    {
+      if (depthFiles [j->GetCamera()] == "")
+      {
+        ++goodPoints[i];
+      }
+    }
+  }
+
   depthCache.resize (cameras.size());
   cached.resize (cameras.size());
-  float num = 0;
-  float den = 0;
-  float mean = 0;
-  float var = 0;
-  int n = 0;
-  for (std::vector<BundlePoint>::const_iterator i = points.begin(); i != points.end(); ++i)
+#pragma omp parallel for
+  for (int i = 0; i < points.size(); ++i)
   {
-    const std::vector<BundleView> views = i->GetViews();
+    if (goodPoints[i] < 4)
+    {
+      continue;
+    }
+    const BundlePoint & point = points [i];
+    const std::vector<BundleView> & views = point.GetViews();
     for (std::vector<BundleView>::const_iterator j = views.begin(); j != views.end(); ++j)
     {
       assert (j->GetCamera() < depthFiles.size());
       assert (j->GetCamera() < cameras.size());
       // Fine the depth according to the uncalibrated data
-      float depthGuess = depthFromRaw (depthFiles, *j, depthCache, cached);
-      if (depthGuess == 0)
+      std::pair<float,float> depthGuess = depthFromRaw (depthFiles, *j, depthCache, cached, a, b, c, cameras[j->GetCamera()]);
+      if (std::isnan(depthGuess.first) || std::isinf(depthGuess.first))
       {
         continue;
       }
-      depthGuess = -0.018*depthGuess*depthGuess + 1.0038*depthGuess + 0.0050;
+      //depthGuess = -0.018*depthGuess*depthGuess + 1.0038*depthGuess + 0.0050;
       // Get distance from camera to point
-      float depthCorrect = depthFromBundle (cameras, *i, *j);
-      std::cerr << j->GetCamera() << " " << depthGuess << " " << depthCorrect << std::endl;
-      num += depthCorrect*depthGuess;
-      den += depthGuess*depthGuess;
-      ++n;
-      mean += depthCorrect/depthGuess;
-      var += (depthCorrect*depthCorrect)/(depthGuess*depthGuess);
-      dataPoints.push_back (std::make_pair<float, float> (depthGuess, depthCorrect));
+      float depthCorrect = depthFromBundle (cameras, point, *j);
+      if (depthCorrect < 0 || depthGuess.first < 0)
+      {
+        continue;
+      }
+      assert (depthGuess.second >= 0);
+#pragma omp critical
+      std::cout << i << " " << j->GetCamera() << " " << depthCorrect << " " << depthGuess.first << " " << depthGuess.second << " " << point.GetPosition().transpose() << " " << point.GetColor().transpose() << std::endl;
     }
   }
-  float scale = num/den;
-  mean /= n;
-  var /= n;
-  var -= mean*mean;
-  float min = scale - sqrt(var);
-  float max = scale + sqrt(var);
-  num = 0;
-  den = 0;
-  for (size_t i = 0; i < dataPoints.size(); ++i)
-  {
-    const std::pair<float, float> & p = dataPoints[i];
-    float ratio = p.second/p.first;
-    if (ratio > min && ratio < max)
-    {
-      num += p.first*p.second;
-      den += p.first*p.first;
-    }
-  }  
-  std::cout << num/den << std::endl;
 }

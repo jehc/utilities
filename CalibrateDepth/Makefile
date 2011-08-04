@@ -1,10 +1,11 @@
-CXXFLAGS     = -g#O3
+CXXFLAGS     = -g# -fopenmp#O3
 LIBS         = -L/home/kmatzen/local/lib -lBundleFile -lopencv_core -lopencv_highgui 
+INCLUDE	     = -I/home/kmatzen/local/include/eigen3
  
 all:	CalibrateDepth
 
 CalibrateDepth:	main.cpp
-	g++ main.cpp $(CXXFLAGS) $(LIBS) -o CalibrateDepth
+	g++ main.cpp $(INCLUDE) $(CXXFLAGS) $(LIBS) -o CalibrateDepth
 
 install:
 	if [ ! -d ~/utilities/bin ]; then mkdir ~/utilities/bin; fi
