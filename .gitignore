@@ -1,4 +1,4 @@
-
+BundleFile/libbundlefile.so*
 *.obj
 ReprojectDepth/debug/*
 ReprojectDepth/GeneratedFiles/*
