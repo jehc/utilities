@@ -14,7 +14,7 @@ class BundlePoint
   friend std::ostream & operator<< (std::ostream &, const BundlePoint &);
 public:
   BundlePoint () { }
-  BundlePoint (const Eigen::Vector3f &, const Eigen::Vector3i &);
+  BundlePoint (const Eigen::Vector3f &, const Eigen::Vector3i &, const std::vector<BundleView> &);
   inline Eigen::Vector3f GetPosition() const { return position; }
   inline Eigen::Vector3i GetColor() const { return color; }
   inline const std::vector<BundleView> & GetViews() const { return views; }

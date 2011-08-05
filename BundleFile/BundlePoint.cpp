@@ -2,8 +2,8 @@
 
 #include <exception>
 
-BundlePoint::BundlePoint (const Eigen::Vector3f & position, const Eigen::Vector3i & color)
-: position (position), color (color)
+BundlePoint::BundlePoint (const Eigen::Vector3f & position, const Eigen::Vector3i & color, const std::vector<BundleView> & views)
+: position (position), color (color), views (views)
 {
 }
 
