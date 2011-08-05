@@ -325,7 +325,7 @@ get_rotation (const std::vector<Eigen::Vector3d> & right, const std::vector<Eige
 }
 
 void
-icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1)
+icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1, const std::vector<float> & variances1, const std::vector<float> & variances2)
 {
   bool converged = false;
   std::vector<int> pairs (cloud2->size(), -1);
@@ -581,7 +581,7 @@ main ( int argc, char * * argv )
       {
         continue;
       }
-      icp_align (clouds[i], clouds[j], tree);
+      icp_align (clouds[i], clouds[j], tree, variances[i], variances[j]);
     }
   }
   TIME_END
