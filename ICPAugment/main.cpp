@@ -169,6 +169,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       Eigen::Vector3f diff = -p;
       diff.normalize ();
 
+      p = R.transpose()*(p - t);
+      diff = R.transpose()*diff;
+
       pcl::PointXYZRGBNormal point;
       point.x = p[0];
       point.y = p[1];
@@ -202,10 +205,6 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       variances.push_back (var);
     }
   }
-
-  Eigen::Vector3f position = -R.transpose() * t;
-  points->sensor_origin_ = Eigen::Vector4f (position[0], position [1], position[2], 1.0);
-  points->sensor_orientation_ = Eigen::Quaternionf (R.transpose());
 
   return points;
 }
@@ -298,9 +297,138 @@ struct Options
   }
 };
 
+Eigen::Matrix3d
+get_rotation (const std::vector<Eigen::Vector3d> & right, const std::vector<Eigen::Vector3d> & left)
+{
+  Eigen::Matrix3d A;
+  A.setZero();
+  
+  for (size_t i = 0; i < right.size(); ++i)
+  {
+    A += left [i] * right [i].transpose();
+  }
+
+  Eigen::JacobiSVD<Eigen::Matrix3d> svd (A, Eigen::ComputeFullU|Eigen::ComputeFullV);
+
+  Eigen::Matrix3d R;
+#pragma omp critical  
+  R = svd.matrixU().transpose() * svd.matrixV();
+
+  if (R.determinant() < 0.0)
+  {
+    Eigen::Matrix3d reflect = Eigen::Matrix3d::Identity();
+    reflect (2,2) = -1;
+#pragma omp critical
+    R = svd.matrixU().transpose() * reflect * svd.matrixV();
+  }
+  return R;
+}
+
 void
 icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1)
 {
+  bool converged = false;
+  std::vector<int> pairs (cloud2->size(), -1);
+  std::vector<float> errors (cloud2->size());
+  float error = std::numeric_limits<float>::infinity();
+  int retryCount = 5;
+  while (!converged)
+  {
+    std::vector<int> k_indices (1);
+    std::vector<float> k_sqr_distances (1);
+    for (size_t index = 0; index < cloud2->size(); ++index)
+    {
+      tree1->nearestKSearch (*cloud2, index, 1, k_indices, k_sqr_distances);
+      pairs [index] = k_indices [0];
+      errors [index] = k_sqr_distances [0];
+    }
+    std::vector<float> errorsSorted (errors);
+    std::sort (errorsSorted.begin(), errorsSorted.end());
+    float maxError = errorsSorted [(int)(errorsSorted.size()*3.0/4.0)];
+    float newError = 0.0;
+    for (size_t i = 0; i <= errorsSorted.size()*3.0/4.0; ++i)
+    {
+      newError += errorsSorted [i];
+    }
+    if (error < newError)
+    {
+      --retryCount;
+    }
+    converged = !retryCount;
+    error = newError;
+    std::cout << "Error: " << error << std::endl;
+
+    Eigen::Vector3d centroid1;
+    centroid1.setZero();
+    Eigen::Vector3d centroid2;
+    centroid2.setZero();
+    double sum_num = 0.0;
+    double sum_den = 0.0;
+    double scale;
+
+    for (size_t i = 0; i < pairs.size(); ++i)
+    {
+      if (errors [i] > maxError)
+      {
+        continue;
+      }
+      const pcl::PointXYZRGBNormal & point1 = cloud1->points[pairs[i]];
+      centroid1 += Eigen::Vector3d (point1.x, point1.y, point1.z);
+      const pcl::PointXYZRGBNormal & point2 = cloud2->points[i];
+      centroid2 += Eigen::Vector3d (point2.x, point2.y, point2.z);
+    }
+    centroid1 /= pairs.size();
+    centroid2 /= pairs.size();
+
+    for (size_t i = 0; i < pairs.size(); ++i)
+    {
+      if (errors [i] > maxError)
+      {
+        continue;
+      }
+      const pcl::PointXYZRGBNormal & point1 = cloud1->points[pairs[i]];
+      const pcl::PointXYZRGBNormal & point2 = cloud2->points[i];
+      Eigen::Vector3d r = Eigen::Vector3d (point1.x, point1.y, point1.z) - centroid1;
+      Eigen::Vector3d l = Eigen::Vector3d (point2.x, point2.y, point2.z) - centroid2;
+
+      sum_num += r.dot(r);
+      sum_den += l.dot(l);
+    }
+
+    scale = sqrt(sum_num / sum_den);
+
+    std::vector<Eigen::Vector3d> right_zm;
+    std::vector<Eigen::Vector3d> left_zm;
+    for (size_t i = 0; i < pairs.size(); ++i)
+    {
+      if (errors[i] > maxError)
+      {
+        continue;
+      }
+      const pcl::PointXYZRGBNormal & point1 = cloud1->points[pairs[i]];
+      const pcl::PointXYZRGBNormal & point2 = cloud2->points[i];
+      Eigen::Vector3d r = Eigen::Vector3d (point1.x, point1.y, point1.z) - centroid1;
+      Eigen::Vector3d l = Eigen::Vector3d (point2.x, point2.y, point2.z) - centroid2;
+
+      right_zm.push_back (r);
+      left_zm.push_back (scale*l);
+    }
+
+    Eigen::Matrix3d R = get_rotation (right_zm, left_zm);
+
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr newCloud2 (new pcl::PointCloud<pcl::PointXYZRGBNormal>());
+    for (pcl::PointCloud<pcl::PointXYZRGBNormal>::const_iterator i = cloud2->begin(); i != cloud2->end(); ++i)
+    {
+      pcl::PointXYZRGBNormal newPoint = *i;
+      Eigen::Vector3d point (i->x, i->y, i->z);
+      point = R*(point - centroid2) + centroid1;
+      newPoint.x = point[0];
+      newPoint.y = point[1];
+      newPoint.z = point[2];
+      newCloud2->push_back (newPoint);
+    }
+    cloud2 = newCloud2;
+  }
 }
 
 int
@@ -393,7 +521,7 @@ main ( int argc, char * * argv )
   std::vector<std::vector<float> > variances (imageList.size());
   TIME_BEGIN ( "Loading all point clouds" )
 #pragma omp parallel for
-  for ( int i = 0; i < ( int )imageList.size (); ++i )
+  for ( int i = 0; i < 240/*( int )imageList.size ()*/; ++i )
   {
     const std::string & filename = imageList [i];
     std::string colorFilename = options.listFile;
@@ -449,6 +577,10 @@ main ( int argc, char * * argv )
     tree->setInputCloud (clouds[i]);
     for (size_t j = i + 1; j < clouds.size(); ++j)
     {
+      if (!clouds[j])
+      {
+        continue;
+      }
       icp_align (clouds[i], clouds[j], tree);
     }
   }
