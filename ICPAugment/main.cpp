@@ -4,6 +4,9 @@
 #include <fstream>
 #include <cmath>
 
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
+
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/features/normal_3d.h>
@@ -15,6 +18,8 @@
 
 #include "ply_io.h"
 #include "BundleFile.h"
+#include "CoordsFile.h"
+#include "TracksFile.h"
 
 #define TIMED struct timeval tic, toc;
 #define TIME_BEGIN( msg ) std::cout << msg << std::endl; gettimeofday ( &tic, 0 );
@@ -37,7 +42,8 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   const BundleCamera &    camera,
   float                   scale,
   const cv::Mat & a, const cv::Mat & b, const cv::Mat & c,
-  std::vector<float> & variances)
+  std::vector<float> & variances,
+  std::vector<std::pair<float,float> > & indices)
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
@@ -119,9 +125,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
     }
   }
 
-  for ( int indexJ = 0; indexJ < depthMap.rows; ++indexJ)
+  for ( int indexJ = 0; indexJ < depthMap.rows; indexJ += 4)
   {
-    for ( int indexI = 0; indexI < depthMap.cols; ++indexI )
+    for ( int indexI = 0; indexI < depthMap.cols; indexI += 4)
     {
       float sum = 0;
       float sum_sq = 0;
@@ -203,6 +209,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       point.rgb = c.rgb;
       points->push_back (point);
       variances.push_back (var);
+      indices.push_back (std::make_pair(indexI, indexJ));
     }
   }
 
@@ -215,6 +222,8 @@ struct Options
   std::string listFile;
   std::string output;
   std::string scale;
+  std::string coordsFile;
+  std::string tracksFile;
   bool highres;
 
   void
@@ -222,6 +231,8 @@ struct Options
   {
     std::cout << "  --bundle [string]" << std::endl;
     std::cout << "  --list [string]" << std::endl;
+    std::cout << "  --coords [string]" << std::endl;
+    std::cout << "  --tracks [string]" << std::endl;
     std::cout << "  --output [string]" << std::endl;
     std::cout << "  --scale [string]" << std::endl;
     std::cout << "  --help" << std::endl;
@@ -238,14 +249,18 @@ struct Options
       { "list",         required_argument,         0,                         'l'                                         },
       { "output",       required_argument,         0,                         'o'                                         },
       { "scale", required_argument,         0,                         's'                                         },
+      { "coords", required_argument, 0, 'c'},
+      { "tracks", required_argument, 0, 't'},
       { 0,              0,                         0,                         0                                           } };
 
     bool bundleFileSet = false;
     bool listFileSet = false;
     bool outputSet = false;
     bool scaleSet = false;
+    bool coordsSet = false;
+    bool tracksSet = false;
 
-    while ( ( c = getopt_long ( argc, argv, "b:l:o:s:", longopts, &indexptr ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "b:l:o:s:c:t:", longopts, &indexptr ) ) != -1 )
     {
       std::stringstream ss;
       switch ( c )
@@ -257,6 +272,14 @@ struct Options
       case 'l':
         listFileSet = true;
         listFile = std::string ( optarg );
+        break;
+      case 'c':
+        coordsSet = true;
+        coordsFile = std::string (optarg);
+        break;
+      case 't':
+        tracksSet = true;
+        tracksFile = std::string (optarg);
         break;
       case 'o':
         outputSet = true;
@@ -294,6 +317,17 @@ struct Options
       std::cout << "output option is required" << std::endl;
       help ();
     }
+    if (!coordsSet) 
+    {
+      std::cout << "coords option is required" << std::endl;
+      help();
+    }
+
+    if (!tracksSet)
+    {
+      std::cout << "tracks option is requried" << std::endl;
+      help();
+    }
   }
 };
 
@@ -325,12 +359,14 @@ get_rotation (const std::vector<Eigen::Vector3d> & right, const std::vector<Eige
 }
 
 void
-icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1, const std::vector<float> & variances1, const std::vector<float> & variances2)
+icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1, const std::vector<float> & variances1, const std::vector<float> & variances2, const std::vector<std::pair<float,float> > & index_pairs1, const std::vector<std::pair<float,float> > & index_pairs2, std::set<int> & keys1, std::set<int> & keys2, size_t maxKeys1, size_t maxKeys2, CoordsFile & coordsFile, TracksFile & tracksFile, int index1, int index2, std::vector<BundlePoint> & bundlePoints)
 {
+  pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr originalCloud2 = cloud2;
   bool converged = false;
   std::vector<int> pairs (cloud2->size(), -1);
   std::vector<float> errors (cloud2->size());
   float error = std::numeric_limits<float>::infinity();
+  float maxError = error;
   int retryCount = 5;
   while (!converged)
   {
@@ -344,11 +380,18 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<
     }
     std::vector<float> errorsSorted (errors);
     std::sort (errorsSorted.begin(), errorsSorted.end());
-    float maxError = errorsSorted [(int)(errorsSorted.size()*3.0/4.0)];
+    maxError = errorsSorted [(int)(errorsSorted.size()*3.0/4.0)];
+    if (maxError > 0.2)
+    {
+      return;
+    }
     float newError = 0.0;
     for (size_t i = 0; i <= errorsSorted.size()*3.0/4.0; ++i)
     {
-      newError += errorsSorted [i];
+      if (errorsSorted [i] < maxError)
+      {
+        newError += errorsSorted [i];
+      }
     }
     if (error < newError)
     {
@@ -356,7 +399,7 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<
     }
     converged = !retryCount;
     error = newError;
-    std::cout << "Error: " << error << std::endl;
+//    std::cout << "Error: " << error << std::endl;
 
     Eigen::Vector3d centroid1;
     centroid1.setZero();
@@ -429,6 +472,52 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, pcl::PointCloud<
     }
     cloud2 = newCloud2;
   }
+
+  size_t originalSize = bundlePoints.size();
+  while (bundlePoints.size() < 100 + originalSize)
+  {
+    int index = (int)((float)pairs.size()*rand()/(RAND_MAX+1.0));
+    assert (index >= 0);
+    assert (index < (int)pairs.size());
+    if (errors [index] > maxError)
+    {
+      continue;
+    }
+    const std::pair<float, float> & indices1 = index_pairs1 [pairs[index]];
+    const std::pair<float, float> & indices2 = index_pairs2 [index];
+    const pcl::PointXYZRGBNormal & point1 = cloud1->points[pairs[index]];
+    const pcl::PointXYZRGBNormal & point2 = originalCloud2->points[index];
+    RgbConverter c1;
+    c1.rgb = point1.rgb;
+    RgbConverter c2;
+    c2.rgb = point2.rgb;
+    Eigen::Vector3i color1 (c1.r, c1.g, c1.b);
+    Eigen::Vector3i color2 (c2.r, c2.g, c2.b);
+    size_t key1, key2;
+#pragma omp critical
+    {
+      key1 = coordsFile.GetNextID (index1);
+      key2 = coordsFile.GetNextID (index2);
+      CoordEntry e1 (key1, indices1.first, indices1.second, 0, 0, color1);
+      CoordEntry e2 (key2, indices2.first, indices2.second, 0, 0, color2);
+      coordsFile.AddEntry (e1, index1);
+      coordsFile.AddEntry (e2, index2);
+    }
+    BundleView view1 (index1, key1, indices1.first, indices1.second);
+    BundleView view2 (index2, key2, indices2.first, indices2.second);
+    std::vector<BundleView> views;
+    views.push_back (view1);
+    views.push_back (view2);
+    Eigen::Vector3f position1 (point1.x, point1.y, point1.z);
+    Eigen::Vector3f position2 (point2.x, point2.y, point2.z);
+    BundlePoint bundlePoint ((position1+position2)/2, (color1+color2)/2, views);
+    bundlePoints.push_back (bundlePoint);
+    Track track;
+    track.AddEntry (TrackEntry (index1, key1));
+    track.AddEntry (TrackEntry (index2, key2));
+#pragma omp critical
+    tracksFile.AddTrack (track);
+  }
 }
 
 int
@@ -444,6 +533,16 @@ main ( int argc, char * * argv )
 
   TIME_BEGIN ( "Loading bundle file" )
   BundleFile file ( options.bundleFile );
+  TIME_END
+
+  TIME_BEGIN ("Loading coords file" )
+  CoordsFile coordsFile (options.coordsFile);
+  coordsFile.save ("debugCoordsFile.txt");
+  TIME_END
+
+  TIME_BEGIN ("Loading tracks file")
+  TracksFile tracksFile (options.tracksFile);
+  tracksFile.save ("debugTracksFile.txt");
   TIME_END
 
   std::ifstream images ( options.listFile.c_str () );
@@ -512,16 +611,15 @@ main ( int argc, char * * argv )
   }
   TIME_END
 
-  int numFrames = 0;
-
   const std::vector<BundleCamera> & cameras = file.GetCameras();
 
   size_t list_index = options.listFile.find_last_of ( "/" );
-  std::vector<pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr> clouds (imageList.size());
-  std::vector<std::vector<float> > variances (imageList.size());
-  TIME_BEGIN ( "Loading all point clouds" )
+  std::vector<std::string> colorFilenames (imageList.size());
+  std::vector<std::string> depthFilenames (imageList.size());
+  std::vector<size_t> maxKeys (imageList.size());
+  TIME_BEGIN ( "Generating point cloud list" )
 #pragma omp parallel for
-  for ( int i = 0; i < 240/*( int )imageList.size ()*/; ++i )
+  for ( int i = 0; i < ( int )imageList.size (); ++i )
   {
     const std::string & filename = imageList [i];
     std::string colorFilename = options.listFile;
@@ -545,48 +643,219 @@ main ( int argc, char * * argv )
     {
       continue;
     }
-#pragma omp atomic
-    ++numFrames;
-#pragma omp critical
-    std::cout << "Opening " << colorFilename << std::endl;
     std::string depthFilename ( colorFilename );
     depthFilename.replace ( replacement, suffix.size(), "depth.raw" );
-    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points = LoadCloud (
-      colorFilename,
-      depthFilename,
-      cameras[i],
-      scales[i],
-      a, b, c, variances[i]);
-    if (points->size() == 0)
+    colorFilenames [i] = colorFilename;
+    depthFilenames [i] = depthFilename;
+
+    boost::iostreams::filtering_streambuf<boost::iostreams::input> in;
+    std::string keyFilename (colorFilename);
+    keyFilename.replace (replacement, suffix.size(), "color.key");
+    std::ifstream keyUncompFile (keyFilename.c_str());
+    keyFilename.replace (replacement, suffix.size(), "color.key.gz");
+    std::ifstream keyCompFile (keyFilename.c_str(), ios_base::in | ios_base::binary);
+    if (!keyUncompFile)
+    {
+      in.push (boost::iostreams::gzip_decompressor());
+      in.push (keyCompFile);
+    }
+    else
+    {
+      in.push (keyUncompFile);
+    }
+
+    std::istream keyFile (&in);
+
+    if (!keyFile)
     {
       continue;
     }
-    clouds [i] = points;
+
+    if (keyUncompFile)
+    {
+#pragma omp critical
+      std::cout << "Reading key file" << std::endl;
+    }
+    else if (keyCompFile)
+    {
+#pragma omp critical
+      std::cout << "Reading key.gz file" << std::endl;
+    }
+    else
+    {
+#pragma omp critical
+      std::cout << "Failed to read key file" << std::endl;
+    }
+
+    int maxKey;
+    if (!(keyFile >> maxKey))
+    {
+      continue;
+    }
+
+#pragma omp critical
+    std::cout << "Found key file size of " << maxKey << std::endl;
+
+    maxKeys [i] = maxKey;
+    keyCompFile.close();
+    keyUncompFile.close();
   }
   TIME_END
 
-  TIME_BEGIN ("All pairs ICP")
-#pragma omp parallel for
-  for (int i = 0; i < (int)clouds.size(); ++i)
+  TIME_BEGIN ("Build graph edges")
+  std::vector<std::set<int> > edges (file.GetCameras().size());
+  std::vector<std::set<int> > keys (file.GetCameras().size());
+  const std::vector<BundlePoint> & points = file.GetPoints();
+  pcl::PointCloud<pcl::PointXYZRGB> debugOriginal;
+  for (size_t i = 0; i < points.size(); ++i)
   {
-    if (!clouds[i])
+    const Eigen::Vector3f & position = points [i].GetPosition();
+    const Eigen::Vector3i & color = points [i].GetColor();
+    pcl::PointXYZRGB debugPoint;
+    debugPoint.x = position [0];
+    debugPoint.y = position [1];
+    debugPoint.z = position [2];
+    RgbConverter c;
+    c.r = color [0];
+    c.g = color [1];
+    c.b = color [2];
+    debugPoint.rgb = c.rgb;
+    debugOriginal.push_back (debugPoint);
+    const std::vector<BundleView> & views = points [i].GetViews();
+    for (size_t j = 0; j < views.size(); ++j)
     {
-      continue;
-    }
-    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree (new pcl::KdTreeFLANN<pcl::PointXYZRGBNormal>());
-    tree->setInputCloud (clouds[i]);
-    for (size_t j = i + 1; j < clouds.size(); ++j)
-    {
-      if (!clouds[j])
+      const BundleView & view1 = views [j];
+      keys [view1.GetCamera()].insert (view1.GetKey());
+      if (maxKeys [view1.GetCamera()] == 0)
       {
         continue;
       }
-      icp_align (clouds[i], clouds[j], tree, variances[i], variances[j]);
+      assert ((size_t)view1.GetKey() < maxKeys [view1.GetCamera()]);
+      for (size_t k = j + 1; k < views.size(); ++k)
+      {
+        const BundleView & view2 = views [k];
+        int camera1 = view1.GetCamera();
+        int camera2 = view2.GetCamera();
+        if (maxKeys [camera2] == 0)
+        {
+          continue;
+        }
+        if (camera2 < camera1)
+        {
+          std::swap (camera1, camera2);
+        }
+        edges [camera1].insert (camera2);
+      }
+    }
+  }
+  savePlyFile ("debugOriginal.ply", debugOriginal);
+  TIME_END
+
+  std::vector<bool> completed (imageList.size());
+  int count = 0;
+
+  TIME_BEGIN ("All pairs ICP")
+#pragma omp parallel for
+  for (int i = 0; i < (int)edges.size(); ++i)
+  {
+    if (colorFilenames [i] == "" || depthFilenames [i] == "")
+    {
+      continue;
+    }
+#pragma omp critical
+    std::cout << "Opening " << colorFilenames [i] << std::endl;
+    std::vector<float> variances1;
+    std::vector<std::pair<float,float> > indices1;
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1 = LoadCloud (
+      colorFilenames [i],
+      depthFilenames [i],
+      cameras[i],
+      scales[i],
+      a, b, c, variances1, indices1);
+    if (cloud1->size() == 0)
+    {
+      continue;
+    }
+
+    pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree (new pcl::KdTreeFLANN<pcl::PointXYZRGBNormal>());
+    tree->setInputCloud (cloud1);
+    
+    std::vector<BundlePoint> newPoints;
+  pcl::PointCloud<pcl::PointXYZRGB> debugPoints;
+    
+    for (std::set<int>::const_iterator j_iter = edges [i].begin(); j_iter != edges [i].end(); ++j_iter)
+    {
+      int j = *j_iter;
+      bool skip;
+#pragma omp critical
+      skip = completed [j];
+      if (skip)
+      {
+        continue;
+      }
+      if (colorFilenames [j] == "" || depthFilenames [j] == "")
+      {
+        continue;
+      }
+      std::cout << "Opening " << colorFilenames [j] << std::endl;
+      std::vector<float> variances2;
+      std::vector<std::pair<float,float> > indices2;
+      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2 = LoadCloud (
+        colorFilenames [j],
+        depthFilenames [j],
+        cameras[j],
+        scales[j],
+        a, b, c, variances2, indices2);
+      if (cloud2->size() == 0)
+      {
+        continue;
+      }
+      size_t originalPointsSize = newPoints.size();
+      icp_align (cloud1, cloud2, tree, variances1, variances2, indices1, indices2, keys [i], keys [j], maxKeys [i], maxKeys [j], coordsFile, tracksFile, i, j, newPoints);
+#pragma omp critical
+      if (!completed [j] && (newPoints.size() - originalPointsSize || maxKeys [j] == keys [j].size()))
+      {
+        completed [j] = true;
+        std::cout << ++count << "/" << completed.size() << " complete" << std::endl;
+      }
+    }
+    for (size_t index = 0; index < newPoints.size(); ++index)
+    {
+#pragma omp critical
+      file.AddPoint (newPoints [index]);
+      pcl::PointXYZRGB debugPoint;
+      const Eigen::Vector3f & position = newPoints [index].GetPosition();
+      const Eigen::Vector3i & color = newPoints [index].GetColor();
+      debugPoint.x = position[0];
+      debugPoint.y = position[1];
+      debugPoint.z = position[2];
+      RgbConverter c;
+      c.r = color [0];
+      c.g = color [1];
+      c.b = color [2];
+      debugPoint.rgb = c.rgb;
+      debugPoints.push_back (debugPoint);
+    }
+    if (newPoints.size())
+    {
+#pragma omp critical
+      std::cout << "Saving " << newPoints.size() << " points" << std::endl;
+#pragma omp critical
+      file.save (options.output + "/bundle_augmented.ply");
+      coordsFile.save (options.output + "/coords_augmented.txt");
+      tracksFile.save (options.output + "/tracks_augmented.txt");
+      std::stringstream ss;
+      ss << "debugPoints" << i << ".ply";
+      savePlyFile (ss.str(), debugPoints);
+#pragma omp critical
+      std::cout << "Saved " << ss.str() << "\a\a\a\a\a" << std::endl;
     }
   }
   TIME_END
 
-  file.save (options.output);
+  file.save (options.output + "/bundle_augmented.ply");
+  coordsFile.save (options.output + "/coords_augmented.txt");
+  tracksFile.save (options.output + "/tracks_augmented.txt");
 
   return 0;
 }

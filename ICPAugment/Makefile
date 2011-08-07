@@ -1,15 +1,15 @@
 CXXFLAGS     = -g -fopenmp -Wall -Wno-non-virtual-dtor
 INCLUDE	     = -I/home/kmatzen/local/include/pcl-1.0 -I/home/kmatzen/local/include/eigen3
-LIBS         = -lbundlefile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lply -lkvo -lm
+LIBS         = -L/home/kmatzen/local/lib -lbundlefile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lply -lkvo -lm -lboost_iostreams
  
 all:	ICPAugment
 
 install:	ICPAugment
 		mkdir -p ~/utilities/bin
-		cp ICPAugment ~/utilities/bin
+		cp $< ~/utilities/bin
 
 ICPAugment:	main.cpp
-	g++ main.cpp $(INCLUDE) -L/home/kmatzen/local/lib $(CXXFLAGS) $(LIBS) -o ICPAugment
+	g++ $^ $(INCLUDE) $(CXXFLAGS) $(LIBS) -o $@
 
 clean:
 	rm -rf ICPAugment
