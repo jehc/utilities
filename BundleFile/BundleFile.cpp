@@ -46,6 +46,8 @@ BundleFile::save (const std::string & filename) const
     throw std::exception();
   }
 
+  output << "# Bundle file v0.3" << std::endl;
+
   output << cameras.size() << " " << points.size() << std::endl;
 
   for (size_t i = 0; i < cameras.size(); ++i)
