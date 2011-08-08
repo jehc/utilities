@@ -7,18 +7,18 @@
 
 class BundlePoint
 {
-  Eigen::Vector3f position;
+  Eigen::Vector3d position;
   Eigen::Vector3i color;
   std::vector<BundleView> views;
   friend std::istream & operator>> (std::istream &, BundlePoint &);
   friend std::ostream & operator<< (std::ostream &, const BundlePoint &);
 public:
   BundlePoint () { }
-  BundlePoint (const Eigen::Vector3f &, const Eigen::Vector3i &, const std::vector<BundleView> &);
-  inline Eigen::Vector3f GetPosition() const { return position; }
+  BundlePoint (const Eigen::Vector3d &, const Eigen::Vector3i &, const std::vector<BundleView> &);
+  inline Eigen::Vector3d GetPosition() const { return position; }
   inline Eigen::Vector3i GetColor() const { return color; }
   inline const std::vector<BundleView> & GetViews() const { return views; }
-  inline void SetPosition (const Eigen::Vector3f & p) { position = p; }
+  inline void SetPosition (const Eigen::Vector3d & p) { position = p; }
 };
 
 #endif

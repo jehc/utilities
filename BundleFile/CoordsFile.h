@@ -10,25 +10,25 @@
 class CoordEntry
 {
   size_t key;
-  float x;
-  float y;
-  float scale;
-  float orient;
+  double x;
+  double y;
+  double scale;
+  double orient;
   Eigen::Vector3i color;
   friend std::istream & operator>> (std::istream &, CoordEntry &);
   friend std::ostream & operator<< (std::ostream &, const CoordEntry &);
 public:
   CoordEntry () {}
-  CoordEntry (size_t key, float x, float y, float scale, float orient, const Eigen::Vector3i & color):key(key),x(x),y(y),scale(scale),orient(orient),color(color) {}
+  CoordEntry (size_t key, double x, double y, double scale, double orient, const Eigen::Vector3i & color):key(key),x(x),y(y),scale(scale),orient(orient),color(color) {}
 };
 
 class CoordsEntry
 {
   int index;
   std::string name;
-  float px;
-  float py;
-  float focal;
+  double px;
+  double py;
+  double focal;
   std::vector<CoordEntry> coords;
   friend std::istream & operator>> (std::istream &, CoordsEntry &);
   friend std::ostream & operator<< (std::ostream &, const CoordsEntry &);

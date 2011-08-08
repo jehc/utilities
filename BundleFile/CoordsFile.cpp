@@ -228,6 +228,9 @@ void CoordsFile::save (const std::string & filename) const
 
 std::ostream & operator<< (std::ostream & out, const CoordsEntry & entry)
 {
+  out.precision (3);
+  out << std::fixed;
+
   out << "#index = " << entry.index << ", name = " << entry.name << ", keys = " << entry.coords.size() << ", px = " << entry.px << ", py = " << entry.py << ", focal = " << entry.focal << std::endl;
 
   for (size_t i = 0; i < entry.coords.size(); ++i)
@@ -239,6 +242,13 @@ std::ostream & operator<< (std::ostream & out, const CoordsEntry & entry)
 
 std::ostream & operator<< (std::ostream & out, const CoordEntry & entry)
 {
-  out << entry.key << " " << entry.x << " " << entry.y << " " << entry.scale << " " << entry.orient << " " << entry.color.transpose();
+  out.precision (2);
+  out << std::fixed;
+
+  out << entry.key << " " << entry.x << " " << entry.y << " ";
+
+  out.unsetf(std::ios_base::floatfield);
+
+  out << entry.scale << " " << entry.orient << " " << entry.color.transpose();
   return out;
 }

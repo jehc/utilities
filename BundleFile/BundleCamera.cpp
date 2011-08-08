@@ -32,6 +32,16 @@ std::istream & operator>> (std::istream & in, BundleCamera & camera)
 
 std::ostream & operator<< (std::ostream & out, const BundleCamera & camera)
 {
+  if (camera.IsValid())
+  {
+    out.precision (10);
+    out << std::scientific;
+  }
+  else
+  {
+    out.unsetf (std::ios_base::floatfield);
+  }
+
   out << camera.f << " " << camera.k1 << " " << camera.k2 << std::endl;
 
   out << camera.R << std::endl;

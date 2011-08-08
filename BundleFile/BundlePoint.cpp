@@ -2,13 +2,16 @@
 
 #include <exception>
 
-BundlePoint::BundlePoint (const Eigen::Vector3f & position, const Eigen::Vector3i & color, const std::vector<BundleView> & views)
+BundlePoint::BundlePoint (const Eigen::Vector3d & position, const Eigen::Vector3i & color, const std::vector<BundleView> & views)
 : position (position), color (color), views (views)
 {
 }
 
 std::ostream & operator<< (std::ostream & out, const BundlePoint & point)
 {
+  out.precision (10);
+  out << std::scientific;
+
   out << point.position.transpose() << std::endl;
 
   out << point.color.transpose() << std::endl;
