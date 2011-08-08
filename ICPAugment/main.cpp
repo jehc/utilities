@@ -413,7 +413,7 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     }
     std::vector<double> errorsSorted (errors);
     std::sort (errorsSorted.begin(), errorsSorted.end());
-    maxError = errorsSorted [(int)(errorsSorted.size()*3.0/4.0)];
+    maxError = errorsSorted [(int)(errorsSorted.size()*1.0/2.0)];
     if (sqrt(maxError) > 0.5)
     {
 #if 0
@@ -853,6 +853,7 @@ main ( int argc, char * * argv )
 
     pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree (new pcl::KdTreeFLANN<pcl::PointXYZRGBNormal>());
     tree->setInputCloud (cloud1);
+    tree->setEpsilon (0);
     
     pcl::PointCloud<pcl::PointXYZRGB> debugPoints;
     int totalPoints = 0;
