@@ -50,6 +50,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   const BundleCamera &    camera,
   double                   scale,
   const cv::Mat & a, const cv::Mat & b, const cv::Mat & c,
+  std::pair<int,int> & size,
 #if 0
   std::vector<double> & variances,
 #endif
@@ -58,6 +59,8 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
   cv::Mat colorImageDist = cv::imread ( colorFilename );
+  size.first = colorImageDist.cols;
+  size.second = colorImageDist.rows;
   
   std::ifstream depthInput ( depthFilename.c_str () );
   if ( !depthInput )
@@ -406,6 +409,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
            BundleFile & bundleFile,
            CoordsFile & coordsFile, 
            TracksFile & tracksFile, 
+           const std::pair<int,int> & size1,
+           const std::pair<int,int> & size2,
            int index1, 
            int index2,
            pcl::PointCloud<pcl::PointXYZRGB> & debugPoints) 
@@ -597,8 +602,9 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     CoordEntry e2 (key2, indices2.first, indices2.second, 0, 0, color);
     coordsFile.AddEntry (e1, index1);
     coordsFile.AddEntry (e2, index2);
-    BundleView view1 (index1, key1, indices1.first, indices1.second);
-    BundleView view2 (index2, key2, indices2.first, indices2.second);
+
+    BundleView view1 (index1, key1, indices1.first - size1.first/2.0, -indices1.second + size1.second/2.0);
+    BundleView view2 (index2, key2, indices2.first - size2.first/2.0, -indices2.second + size2.second/2.0);
     std::vector<BundleView> views;
     views.push_back (view1);
     views.push_back (view2);
@@ -882,12 +888,14 @@ main ( int argc, char * * argv )
     std::vector<double> variances1;
 #endif
     std::vector<std::pair<double,double> > indices1;
+    std::pair<int,int> size1;
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1 = LoadCloud (
       colorFilenames [i],
       depthFilenames [i],
       cameras[i],
       scales[i],
       a, b, c, 
+      size1,
 #if 0
       variances1, 
 #endif
@@ -906,7 +914,7 @@ main ( int argc, char * * argv )
     for (std::set<int>::const_iterator j_iter = edges [i].begin(); j_iter != edges [i].end(); ++j_iter)
     {
       int j = *j_iter;
-      if (edgesMulti [i].count (j) < 20)
+      if (edgesMulti [i].count (j) < 10)
       {
         continue;
       }
@@ -928,12 +936,14 @@ main ( int argc, char * * argv )
       std::vector<double> variances2;
 #endif
       std::vector<std::pair<double,double> > indices2;
+      std::pair<int,int> size2;
       pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2 = LoadCloud (
         colorFilenames [j],
         depthFilenames [j],
         cameras[j],
         scales[j],
         a, b, c, 
+        size2,
 #if 0
         variances2, 
 #endif
@@ -960,6 +970,8 @@ main ( int argc, char * * argv )
                       bundleFile,
                       coordsFile, 
                       tracksFile, 
+                      size1,
+                      size2,
                       i, j, 
                       debugPoints);
       omp_set_lock (&cout_lock);
