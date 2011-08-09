@@ -1,5 +1,5 @@
 CXXFLAGS     = -g# -fopenmp#O3
-LIBS         = -L/home/kmatzen/local/lib -lBundleFile -lopencv_core -lopencv_highgui 
+LIBS         = -L/home/kmatzen/local/lib -lbundlefile -lopencv_core -lopencv_highgui 
 INCLUDE	     = -I/home/kmatzen/local/include/eigen3
  
 all:	CalibrateDepth
