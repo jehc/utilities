@@ -31,19 +31,19 @@ printCommand ( int argc, char * * argv )
   std::cout << std::endl;
 } 
   
-std::vector<float> 
-dt ( std::vector<float> f, int n) 
+std::vector<double> 
+dt ( std::vector<double> f, int n) 
 {
-  std::vector<float> d (n);
+  std::vector<double> d (n);
   std::vector<int> v (n);
-  std::vector<float> z (n+1);
+  std::vector<double> z (n+1);
   int k = 0;
   v[0] = 0;
   z[0] = -1e20;
   z[1] = +1e20;
   for (int q = 1; q <= n-1; q++) 
   {
-    float s  = ((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]);
+    double s  = ((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]);
     while (s <= z[k]) 
     {
       k--;
@@ -70,7 +70,7 @@ dt (cv::Mat & im)
 {
   int width = im.cols;
   int height = im.rows;
-  std::vector<float> f (std::max(width,height));
+  std::vector<double> f (std::max(width,height));
 
   // transform along columns
   for (int x = 0; x < width; x++) 
@@ -79,7 +79,7 @@ dt (cv::Mat & im)
     {
       f[y] = im.at<float> (y, x);
     }
-    std::vector<float> d = dt(f, height);
+    std::vector<double> d = dt(f, height);
     for (int y = 0; y < height; y++) 
     {
       im.at<float> (y, x) = d[y];
@@ -93,7 +93,7 @@ dt (cv::Mat & im)
     {
       f[x] = im.at<float>(y, x);
     }
-    std::vector<float> d = dt(f, width);
+    std::vector<double> d = dt(f, width);
     for (int x = 0; x < width; x++) 
     {
       im.at<float>(y, x) = d[x];
@@ -115,7 +115,7 @@ LoadKeys ( const std::string & keypointFilename )
   getline ( input, junk ); 
   while ( input )
   {
-    float x, y;
+    double x, y;
     if ( !( input >> x ) ) 
     {
       break;
@@ -136,7 +136,7 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   const std::string &     depthFilename,
   const std::string &     keypointFilename,
   const BundleCamera &    camera,
-  float                   scale,
+  double                   scale,
   const std::vector<std::pair<BundleView,BundlePoint> > & bundlerPoints, const cv::Mat & a, const cv::Mat & b, const cv::Mat & c,
   bool highres)
 {
@@ -177,17 +177,17 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   cv::Mat cameraMatrixCV ( 3, 3, CV_32FC1 );
   cameraMatrixCV.at<float> ( 0, 0 ) = camera.GetF ();
   cameraMatrixCV.at<float> ( 0, 1 ) = 0;
-  cameraMatrixCV.at<float> ( 0, 2 ) = ( float )colorImageDist.cols / 2;
+  cameraMatrixCV.at<float> ( 0, 2 ) = colorImageDist.cols / 2.0;
   cameraMatrixCV.at<float> ( 1, 0 ) = 0;
   cameraMatrixCV.at<float> ( 1, 1 ) = camera.GetF ();
-  cameraMatrixCV.at<float> ( 1, 2 ) = ( float )colorImageDist.rows / 2;
+  cameraMatrixCV.at<float> ( 1, 2 ) = colorImageDist.rows / 2.0;
   cameraMatrixCV.at<float> ( 2, 0 ) = 0;
   cameraMatrixCV.at<float> ( 2, 1 ) = 0;
   cameraMatrixCV.at<float> ( 2, 2 ) = 1;
 
-  Eigen::Matrix3f cameraMatrix;
-  cameraMatrix << camera.GetF (), 0, ( float )colorImageDist.cols / 2,
-  0, camera.GetF (), ( float )colorImageDist.rows / 2,
+  Eigen::Matrix3d cameraMatrix;
+  cameraMatrix << camera.GetF (), 0, colorImageDist.cols / 2.0,
+  0, camera.GetF (), colorImageDist.rows / 2.0,
   0, 0, 1;
 
   cv::Mat distCoeffs ( 5, 1, CV_32FC1 );
@@ -212,8 +212,8 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
       CV_32FC1 ), cameraMatrixCV, depthMapDist.size (), CV_32FC1, map1, map2 );
   cv::remap ( depthMapDist, depthMap, map1, map2, cv::INTER_NEAREST );
 
-  const Eigen::Matrix3f & R = camera.GetR ();
-  const Eigen::Vector3f & t = camera.GetT ();
+  const Eigen::Matrix3d & R = camera.GetR ();
+  const Eigen::Vector3d & t = camera.GetT ();
 
   cv::Mat confidenceMapDist = 1e20*cv::Mat::ones(depthMapDist.rows, depthMapDist.cols, CV_32FC1);
 
@@ -221,17 +221,17 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   {
   for (std::vector<std::pair<BundleView,BundlePoint> >::const_iterator i = bundlerPoints.begin(); i != bundlerPoints.end(); ++i)
   {
-    const Eigen::Vector3f p = i->second.GetPosition();
-    Eigen::Vector3f center = -R.transpose() * t;
-    Eigen::Vector3f b_point = p - center;
-    Eigen::Vector3f z (0, 0, -1);
+    const Eigen::Vector3d p = i->second.GetPosition();
+    Eigen::Vector3d center = -R.transpose() * t;
+    Eigen::Vector3d b_point = p - center;
+    Eigen::Vector3d z (0, 0, -1);
     z = R.transpose() * z;
-    float depthA = z.dot(b_point);
+    double depthA = z.dot(b_point);
     int indexI = (int)(i->first.GetX() + colorImageDist.cols/2);
     int indexJ = (int)(colorImageDist.rows/2 - i->first.GetY());
-    float depthB = depthMapDist.at<float> (indexJ, indexI);
+    double depthB = depthMapDist.at<float> (indexJ, indexI);
     depthB = a.at<float>(indexJ, indexI) * depthB * depthB + b.at<float>(indexJ, indexI) * depthB + c.at<float>(indexJ, indexI);
-    confidenceMapDist.at<float>(indexJ, indexI) = std::min(confidenceMapDist.at<float> (indexJ, indexI), 100*abs(depthA - depthB));
+    confidenceMapDist.at<float>(indexJ, indexI) = std::min((double)confidenceMapDist.at<float> (indexJ, indexI), 100*abs(depthA - depthB));
   }
   dt (confidenceMapDist);
   }
@@ -250,10 +250,10 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   {
     for (int i = 0; i < depthMap.cols; ++i)
     {
-      float depthRaw = depthMap.at<float>(j, i);
+      double depthRaw = depthMap.at<float>(j, i);
       if (depthRaw != 0)
       {
-        depthMap.at<float>(j, i) = a.at<float>(j, i)*pow(depthRaw, 2.0f) + b.at<float>(j, i)*depthRaw + c.at<float>(j, i);
+        depthMap.at<float>(j, i) = a.at<float>(j, i)*pow(depthRaw, 2.0) + b.at<float>(j, i)*depthRaw + c.at<float>(j, i);
       }
     }
   }
@@ -266,34 +266,34 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   {
     for ( int i = 0; i < depthMap.cols; ++i )
     {
-      float depthRaw = depthMap.at<float> ( j, i );
-      float depth = depthRaw;
-  //    float depth = a.at<float>(j, i)*pow(depthRaw, 2.0f) + b.at<float>(j, i)*depthRaw + c.at<float>(j, i);
-  //    float depth = -0.018 * depthRaw * depthRaw + 1.0038 * depthRaw + 0.005;
+      double depthRaw = depthMap.at<float> ( j, i );
+      double depth = depthRaw;
+  //    double depth = a.at<float>(j, i)*pow(depthRaw, 2.0f) + b.at<float>(j, i)*depthRaw + c.at<float>(j, i);
+  //    double depth = -0.018 * depthRaw * depthRaw + 1.0038 * depthRaw + 0.005;
       if ( depthRaw <= 0 || isnan(depth) || isinf(depth) || depth <= 0 || depthRaw < 0.2)// || depth > 3)
       {
         pcl::PointSurfel point;
-        point.x = std::numeric_limits<float>::quiet_NaN();
-        point.y = std::numeric_limits<float>::quiet_NaN();
-        point.z = std::numeric_limits<float>::quiet_NaN();
-        point.normal_x = std::numeric_limits<float>::quiet_NaN();
-        point.normal_y = std::numeric_limits<float>::quiet_NaN();
-        point.normal_z = std::numeric_limits<float>::quiet_NaN();
+        point.x = std::numeric_limits<double>::quiet_NaN();
+        point.y = std::numeric_limits<double>::quiet_NaN();
+        point.z = std::numeric_limits<double>::quiet_NaN();
+        point.normal_x = std::numeric_limits<double>::quiet_NaN();
+        point.normal_y = std::numeric_limits<double>::quiet_NaN();
+        point.normal_z = std::numeric_limits<double>::quiet_NaN();
         point.rgba = 0;
-        point.curvature = std::numeric_limits<float>::quiet_NaN();
-        point.confidence = std::numeric_limits<float>::quiet_NaN();
-        point.radius = std::numeric_limits<float>::quiet_NaN();
+        point.curvature = std::numeric_limits<double>::quiet_NaN();
+        point.confidence = std::numeric_limits<double>::quiet_NaN();
+        point.radius = std::numeric_limits<double>::quiet_NaN();
         (*points) (i, j) = point;
         continue;
       }
 
-      Eigen::Vector3f p ( ( float )i, (float)depthMap.rows - 1 - ( float )j, 1 );
+      Eigen::Vector3d p ( ( double )i, (double)depthMap.rows - 1 - ( double )j, 1 );
       p = scale * depth * p;
 
       p = cameraMatrix.inverse () * p;
       p[2] *= -1;
 
-      Eigen::Vector3f diff = -p;
+      Eigen::Vector3d diff = -p;
       diff.normalize ();
 
       pcl::PointSurfel point;
@@ -302,20 +302,20 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
       point.z = p[2];
 
       //Estimate after whole cloud is loaded
-      point.normal_x = std::numeric_limits<float>::quiet_NaN();
-      point.normal_y = std::numeric_limits<float>::quiet_NaN();
-      point.normal_z = std::numeric_limits<float>::quiet_NaN();
+      point.normal_x = std::numeric_limits<double>::quiet_NaN();
+      point.normal_y = std::numeric_limits<double>::quiet_NaN();
+      point.normal_z = std::numeric_limits<double>::quiet_NaN();
 
       //TODO
-      point.curvature = std::numeric_limits<float>::quiet_NaN();
+      point.curvature = std::numeric_limits<double>::quiet_NaN();
      
       point.radius = scale * depth / camera.GetF();
 
-      float Wp = exp(-confidenceMap.at<float>(j, i)/10000.0);
+      double Wp = exp(-confidenceMap.at<float>(j, i)/10000.0);
       int Sb = std::min(i, std::min(j, std::min (depthMap.rows - 1 - j, depthMap.cols - 1 - i)));
       int Smax = 20;
-      float alphab = 1;
-      float Wb = (Sb >= Smax) ? 1.0 : (float)Sb/Smax; 
+      //double alphab = 1;
+      double Wb = (Sb >= Smax) ? 1.0 : (double)Sb/Smax; 
       
       point.confidence = Wb*Wp;
 
@@ -378,24 +378,24 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   for (i = points->begin(), j = normals.begin(); i != points->end(); ++i, ++j)*/
   for (i = points->begin(); i != points->end(); ++i)
   {
-//    Eigen::Vector3f n (j->normal_x, j->normal_y, j->normal_z);
-    Eigen::Vector3f v (-i->x, -i->y, -i->z);
+//    Eigen::Vector3d n (j->normal_x, j->normal_y, j->normal_z);
+    Eigen::Vector3d v (-i->x, -i->y, -i->z);
     v.normalize();
 /*    if (v.dot(n) < 0)
     {
       n *= -1;
     }*/
-    float alphav = 2;
-//    float Wv = pow(v.dot (n), alphav);
+    //double alphav = 2;
+//    double Wv = pow(v.dot (n), alphav);
 //    i->confidence *= Wv;
     i->normal_x = v[0];
     i->normal_y = v[1];
     i->normal_z = v[2];
   }
 
-  Eigen::Vector3f position = -R.transpose() * t;
+  Eigen::Vector3d position = -R.transpose() * t;
   points->sensor_origin_ = Eigen::Vector4f (position[0], position [1], position[2], 1.0);
-  points->sensor_orientation_ = Eigen::Quaternionf (R.transpose());
+  points->sensor_orientation_ = Eigen::Quaterniond (R.transpose()).cast<float>();
 
   return points;
 }
@@ -551,10 +551,10 @@ main ( int argc, char * * argv )
   }
 
   TIME_BEGIN ("Loading depth tuning")
-  std::vector<float> depthTuning;
+  std::vector<double> depthTuning;
   while (depthTuningFile)
   {
-    float depth;
+    double depth;
     if (!(depthTuningFile >> depth))
     {
       break;
