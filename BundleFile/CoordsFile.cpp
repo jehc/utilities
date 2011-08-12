@@ -196,6 +196,15 @@ std::istream & operator>> (std::istream & in, CoordEntry & entry)
   {
     throw std::exception();
   }
+
+  std::string remainingLine;
+  getline (in, remainingLine);
+  std::stringstream ss;
+  ss << remainingLine;
+  if (!(ss >> entry.distance))
+  {
+    entry.distance = 0.0;
+  }
  
   return in;
 }
@@ -250,5 +259,13 @@ std::ostream & operator<< (std::ostream & out, const CoordEntry & entry)
   out.unsetf(std::ios_base::floatfield);
 
   out << entry.scale << " " << entry.orient << " " << entry.color.transpose();
+
+  if (entry.distance > 0.0)
+  {
+    out.precision (10);
+    out << std::fixed;
+    out << " " << entry.distance;
+  }
+
   return out;
 }
