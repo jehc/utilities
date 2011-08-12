@@ -34,6 +34,13 @@ omp_lock_t cout_lock;
 omp_lock_t mult_lock;
 omp_lock_t bundle_lock;
 
+struct MeasurementData
+{
+  double x, y;
+  double distance;
+  MeasurementData(double x, double y, double distance):x(x),y(y),distance(distance) {}
+};
+
 void
 printCommand ( int argc, char * * argv )
 { 
@@ -54,7 +61,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
 #if 0
   std::vector<double> & variances,
 #endif
-  std::vector<std::pair<double,double> > & indices)
+  std::vector<MeasurementData> & indices)
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
@@ -201,6 +208,8 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       p = cameraMatrix.inverse () * p;
       p[2] *= -1;
 
+      double distance = p.norm();
+
       Eigen::Vector3d diff = -p;
       diff.normalize ();
 
@@ -241,7 +250,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
 #if 0
       variances.push_back (var);
 #endif
-      indices.push_back (std::make_pair(indexI, indexJ));
+      indices.push_back (MeasurementData(indexI, indexJ, distance));
     }
   }
 
@@ -398,8 +407,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
            const std::vector<double> & variances1, 
            const std::vector<double> & variances2, 
 #endif
-           const std::vector<std::pair<double,double> > & index_pairs1, 
-           const std::vector<std::pair<double,double> > & index_pairs2, 
+           const std::vector<MeasurementData> & index_pairs1, 
+           const std::vector<MeasurementData> & index_pairs2, 
 #if 0
            std::set<int> & keys1, 
            std::set<int> & keys2, 
@@ -423,8 +432,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   pcl::PointCloud<pcl::PointXYZ>::Ptr subCloud1 (new pcl::PointCloud<pcl::PointXYZ>());
   pcl::PointCloud<pcl::PointXYZ>::Ptr subCloud2 (new pcl::PointCloud<pcl::PointXYZ>());
   pcl::KdTree<pcl::PointXYZ>::Ptr subTree1 (new pcl::KdTreeFLANN<pcl::PointXYZ>());
-  std::vector<std::pair<double,double> > sub_index_pairs1;
-  std::vector<std::pair<double,double> > sub_index_pairs2;
+  std::vector<MeasurementData> sub_index_pairs1;
+  std::vector<MeasurementData> sub_index_pairs2;
   double error = 0;
  
   {
@@ -576,8 +585,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     int index = (int)((double)subPairs.size()*rand()/(RAND_MAX+1.0));
     assert (index >= 0);
     assert (index < (int)subPairs.size());
-    const std::pair<double,double> & indices1 = sub_index_pairs1 [subPairs[index]];
-    const std::pair<double,double> & indices2 = sub_index_pairs2 [index];
+    const MeasurementData & indices1 = sub_index_pairs1 [subPairs[index]];
+    const MeasurementData & indices2 = sub_index_pairs2 [index];
     const pcl::PointXYZ & point1 = subCloud1->points[subPairs[index]];
     const pcl::PointXYZ & point2 = subCloud2->points[index];
     Eigen::Vector3i color ((int)(255.0*rand()/(RAND_MAX+1.0)), (int)(255.0*rand()/(RAND_MAX+1.0)), (int)(255.0*rand()/(RAND_MAX+1.0)));
@@ -598,13 +607,13 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     omp_set_lock (&bundle_lock);  
     key1 = coordsFile.GetNextID (index1);
     key2 = coordsFile.GetNextID (index2);
-    CoordEntry e1 (key1, indices1.first, indices1.second, 0, 0, color);
-    CoordEntry e2 (key2, indices2.first, indices2.second, 0, 0, color);
+    CoordEntry e1 (key1, indices1.x, indices1.y, 0, 0, color, indices1.distance);
+    CoordEntry e2 (key2, indices2.x, indices2.y, 0, 0, color, indices2.distance);
     coordsFile.AddEntry (e1, index1);
     coordsFile.AddEntry (e2, index2);
 
-    BundleView view1 (index1, key1, indices1.first - size1.first/2.0, -indices1.second + size1.second/2.0);
-    BundleView view2 (index2, key2, indices2.first - size2.first/2.0, -indices2.second + size2.second/2.0);
+    BundleView view1 (index1, key1, indices1.x - size1.first/2.0, -indices1.y + size1.second/2.0);
+    BundleView view2 (index2, key2, indices2.x - size2.first/2.0, -indices2.y + size2.second/2.0);
     std::vector<BundleView> views;
     views.push_back (view1);
     views.push_back (view2);
@@ -887,7 +896,7 @@ main ( int argc, char * * argv )
 #if 0
     std::vector<double> variances1;
 #endif
-    std::vector<std::pair<double,double> > indices1;
+    std::vector<MeasurementData> indices1;
     std::pair<int,int> size1;
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1 = LoadCloud (
       colorFilenames [i],
@@ -935,7 +944,7 @@ main ( int argc, char * * argv )
 #if 0
       std::vector<double> variances2;
 #endif
-      std::vector<std::pair<double,double> > indices2;
+      std::vector<MeasurementData> indices2;
       std::pair<int,int> size2;
       pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2 = LoadCloud (
         colorFilenames [j],
