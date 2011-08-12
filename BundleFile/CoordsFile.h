@@ -14,8 +14,8 @@ class CoordEntry
   double y;
   double scale;
   double orient;
-  double distance;
   Eigen::Vector3i color;
+  double distance;
   friend std::istream & operator>> (std::istream &, CoordEntry &);
   friend std::ostream & operator<< (std::ostream &, const CoordEntry &);
 public:
