@@ -1,6 +1,6 @@
 CXXFLAGS=-g
 CFLAGS=-g
-INCLUDE=-I. -I/usr/local/include/pcl-1.0/ -I/usr/include/pcl-1.0 -I/home/kmatzen/local/include/pcl-1.0 -I/usr/local/include/eigen3 -I/home/kmatzen/local/include/eigen3
+INCLUDE=-I. -I/usr/include/pcl-1.1 -I/usr/local/include/pcl-1.0/ -I/usr/include/pcl-1.0 -I/home/kmatzen/local/include/pcl-1.0 -I/usr/local/include/eigen3 -I/home/kmatzen/local/include/eigen3
 
 all: libply.a
 

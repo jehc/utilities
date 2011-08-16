@@ -46,6 +46,11 @@ HighResViewerWidget::load ()
   list.close();
 
   std::ifstream tuningIn (tuningFile.c_str());
+  if (!tuningIn)
+  {
+    std::cout << "Failed to open " << tuningFile << std::endl;
+    exit (1);
+  }
   std::vector<float> tuning;
   while (tuningIn)
   {
@@ -220,10 +225,10 @@ HighResViewerWidget::loadPoints()
       Eigen::Vector3f v2 (point2.x, point2.y, point2.z);
       Eigen::Vector3f v3 (point3.x, point3.y, point3.z);
       Eigen::Vector3f v4 (point4.x, point4.y, point4.z);
-      bool length12 = (v1 - v2).norm() < 0.1;
-      bool length34 = (v3 - v4).norm() < 0.1;
-      bool length13 = (v1 - v3).norm() < 0.1;
-      bool length24 = (v2 - v4).norm() < 0.1;
+      bool length12 = (v1 - v2).norm() < 0.25;
+      bool length34 = (v3 - v4).norm() < 0.25;
+      bool length13 = (v1 - v3).norm() < 0.25;
+      bool length24 = (v2 - v4).norm() < 0.25;
       bool upperLeft = (index1!=-1)&&(index3!=-1)&&(index4!=-1)&&length13&&length34;
       bool upperRight = (index3!=-1)&&(index4!=-1)&&(index2!=-1)&&length34&&length24;
       bool lowerLeft = (index3!=-1)&&(index1!=-1)&&(index2!=-1)&&length12&&length13;
@@ -324,7 +329,7 @@ HighResViewerWidget::initializeGL()
     "void\n"
     "main()\n"
     "{\n"
-   "  gl_FragColor = vec4(vcolor, 0.1);\n"
+   "  gl_FragColor = vec4(vcolor, 1);\n"
     "}\n";
 
   const char * RangeVShader =
@@ -491,8 +496,9 @@ HighResViewerWidget::paintGL()
   }
   pointShader->setUniformValue (pointProjectionLocation, QMatrix4x4(projectionMatrices[image].data()).transposed());
   pointShader->setUniformValue (pointModelviewInvLocation, QMatrix4x4(imageTransformations[image].data()).transposed());
-  glEnable (GL_BLEND);
-  glBlendFunc(GL_DST_ALPHA, GL_SRC_ALPHA);
+//  glEnable (GL_BLEND);
+  glEnable(GL_DEPTH_TEST);
+//  glBlendFunc(GL_DST_ALPHA, GL_SRC_ALPHA);
   if (surfaceMode)
   {
     glDrawElements (GL_TRIANGLES, surfaceIndices.size(), GL_UNSIGNED_INT, (GLvoid*)&surfaceIndices[0]);
@@ -501,7 +507,8 @@ HighResViewerWidget::paintGL()
   {
     glDrawElements (GL_TRIANGLES, indices[overlay].size(), GL_UNSIGNED_INT, (GLvoid*)&indices[overlay][0]);
   }
-  glDisable (GL_BLEND);
+  glDisable (GL_DEPTH_TEST);
+//  glDisable (GL_BLEND);
   pointShader->disableAttributeArray (pointVertexLocation);
   pointShader->disableAttributeArray (pointColorLocation);
   pointShader->release();
