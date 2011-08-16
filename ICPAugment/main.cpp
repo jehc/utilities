@@ -1,3 +1,8 @@
+#define PRINT_LOG
+//#define DEBUG_OUTPUT
+#define USE_VARIANCES
+//#define TEST_ONE
+
 #include <iostream>
 #include <string>
 #include <set>
@@ -12,6 +17,7 @@
 #include <pcl/point_types.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/features/normal_3d.h>
+#include <pcl/octree/octree_pointcloud.h>
 
 #include <sys/time.h>
 #include <getopt.h>
@@ -22,15 +28,15 @@
 #include "BundleFile.h"
 #include "CoordsFile.h"
 #include "TracksFile.h"
+#include "Toro3DFile.h"
 
 #define TIMED struct timeval tic, toc;
 #define TIME_BEGIN( msg ) std::cout << msg << std::endl; gettimeofday ( &tic, 0 );
 #define TIME_END gettimeofday ( &toc, \
   0 ); std::cout << "Complete in " << toc.tv_sec - tic.tv_sec << " seconds." << std::endl;
 
-#define DEBUG_OUTPUT 0
-
 omp_lock_t cout_lock;
+omp_lock_t cerr_lock;
 omp_lock_t mult_lock;
 omp_lock_t bundle_lock;
 
@@ -38,7 +44,8 @@ struct MeasurementData
 {
   double x, y;
   double distance;
-  MeasurementData(double x, double y, double distance):x(x),y(y),distance(distance) {}
+  double variance;
+  MeasurementData(double x, double y, double distance, double variance):x(x),y(y),distance(distance),variance(variance) {}
 };
 
 void
@@ -51,6 +58,37 @@ printCommand ( int argc, char * * argv )
   std::cout << std::endl;
 } 
   
+Eigen::Vector3d matrix2euler (Eigen::Matrix3d orientation)
+{
+    // http://www.gregslabaugh.name/publications/euler.pdf
+    double theta = -asin (orientation(2,0));
+    double psi;
+    double phi;
+    if (fabs(cos(theta)) > 1e-9)
+    {
+      phi = atan2 (orientation(2,1)/cos(theta), orientation(2,2)/cos(theta));
+      psi = atan2 (orientation(1,0)/cos(theta), orientation(0,0)/cos(theta));
+    }
+    else
+    {
+      if (fabs(theta - M_PI/2.0) < 1e-9)
+      {
+        psi = 0.0;
+        phi = atan2 (orientation(0,1),orientation(0,2));
+      }
+      else if (fabs(theta - (-M_PI/2.0)) < 1e-9)
+      {
+        psi = 0.0;
+        phi = atan2(-orientation(0,1),-orientation(1,2));
+      }
+      else
+      {
+        assert (0);
+      }
+    }
+    return Eigen::Vector3d (phi, theta, psi);
+}
+
 pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   const std::string &     colorFilename,
   const std::string &     depthFilename,
@@ -58,10 +96,12 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   double                   scale,
   const cv::Mat & a, const cv::Mat & b, const cv::Mat & c,
   std::pair<int,int> & size,
-#if 0
+#ifdef USE_VARIANCES
   std::vector<double> & variances,
 #endif
-  std::vector<MeasurementData> & indices)
+  std::vector<MeasurementData> & indices,
+  Eigen::Vector3d & translation,
+  Eigen::Matrix3d & rotation)
 {
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
@@ -141,6 +181,9 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   const Eigen::Matrix3d & R = camera.GetR ();
   const Eigen::Vector3d & t = camera.GetT ();
 
+  translation = -R.transpose() * t;
+  rotation = R.transpose();
+
   for (int j = 0; j < depthMap.rows; ++j)
   {
     for (int i = 0; i < depthMap.cols; ++i)
@@ -157,7 +200,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   {
     for ( int indexI = 0; indexI < depthMap.cols; indexI += 4)
     {
-#if 0
+#if 1 //#ifdef USE_VARIANCES
       double sum = 0;
       double sum_sq = 0;
       int n = 0;
@@ -194,16 +237,15 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       }
 
       double var = sum_sq/(n-1);
-#else
-      double mean = depthMap.at<float>(indexJ, indexI);
-      if (isnan(mean) || isinf(mean) || mean <= 0.2)
+#endif
+      double measurement = depthMap.at<float>(indexJ, indexI);
+      if (isnan(measurement) || isinf(measurement) || measurement <= 0)
       {
         continue;
       }
-#endif
 
       Eigen::Vector3d p ( ( double )indexI, (double)depthMap.rows - 1 - ( double )indexJ, 1 );
-      p = scale * mean * p;
+      p = scale * measurement * p;
 
       p = cameraMatrix.inverse () * p;
       p[2] *= -1;
@@ -247,10 +289,10 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       c.b = color[0];
       point.rgb = c.rgb;
       points->push_back (point);
-#if 0
+#ifdef USE_VARIANCES
       variances.push_back (var);
 #endif
-      indices.push_back (MeasurementData(indexI, indexJ, distance));
+      indices.push_back (MeasurementData(indexI, indexJ, distance, var));
     }
   }
 
@@ -373,27 +415,38 @@ struct Options
 };
 
 Eigen::Quaterniond
-get_rotation (const std::vector<Eigen::Vector3d> & right, const std::vector<Eigen::Vector3d> & left)
+get_rotation (const std::vector<Eigen::Vector3d> & right, const std::vector<Eigen::Vector3d> & left, const std::vector<double> & weights)
 {
-  Eigen::Matrix3d A = Eigen::Matrix3d::Zero();
+  Eigen::Matrix3d A_pq = Eigen::Matrix3d::Zero();
   
   for (size_t i = 0; i < right.size(); ++i)
   {
-    A += left [i] * right [i].transpose();
+    A_pq += weights [i] * right [i] * left [i].transpose();
   }
 
-  Eigen::JacobiSVD<Eigen::Matrix3d> svd (A, Eigen::ComputeFullU|Eigen::ComputeFullV);
+  omp_set_lock (&mult_lock);
+  Eigen::Matrix3d S_sq = A_pq.transpose() * A_pq;
+  omp_unset_lock (&mult_lock);
+
+  Eigen::JacobiSVD<Eigen::Matrix3d> svd (S_sq, Eigen::ComputeFullU|Eigen::ComputeFullV);
+
+  Eigen::Vector3d sqrt_singular_values = svd.singularValues();
+  for (int i = 0; i < 3; ++i)
+  {
+    sqrt_singular_values[i] = sqrt(sqrt_singular_values[i]);
+  }
 
   omp_set_lock (&mult_lock);
-  Eigen::Matrix3d R = svd.matrixU().transpose() * svd.matrixV();
+  Eigen::Matrix3d S = svd.matrixU() * Eigen::AlignedScaling3d(sqrt_singular_values) * svd.matrixV().transpose();
+  Eigen::Matrix3d R = A_pq * S.inverse();
   omp_unset_lock (&mult_lock);
 
   if (R.determinant() < 0.0)
   {
-    Eigen::Matrix3d reflect = Eigen::Matrix3d::Identity();
-    reflect (2,2) = -1;
+    sqrt_singular_values[2] *= -1;
     omp_set_lock (&mult_lock);
-    R = svd.matrixU().transpose() * reflect * svd.matrixV();
+    S = svd.matrixU() * Eigen::AlignedScaling3d(sqrt_singular_values) * svd.matrixV().transpose();
+    R = A_pq * S.inverse();
     omp_unset_lock (&mult_lock);
   }
   return Eigen::Quaterniond(R);
@@ -403,7 +456,11 @@ size_t
 icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, 
            pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, 
            pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1, 
-#if 0
+           const Eigen::Vector3d & translation1,
+           const Eigen::Vector3d & translation2,
+           const Eigen::Matrix3d & rotation1,
+           const Eigen::Matrix3d & rotation2,
+#ifdef USE_VARIANCES
            const std::vector<double> & variances1, 
            const std::vector<double> & variances2, 
 #endif
@@ -418,11 +475,16 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
            BundleFile & bundleFile,
            CoordsFile & coordsFile, 
            TracksFile & tracksFile, 
+           Toro3DFile & toroFile,
            const std::pair<int,int> & size1,
            const std::pair<int,int> & size2,
            int index1, 
            int index2,
-           pcl::PointCloud<pcl::PointXYZRGB> & debugPoints) 
+           const std::string & filename1,
+           const std::string & filename2,
+           pcl::PointCloud<pcl::PointXYZRGB> & debugPoints,
+           double & failureError,
+           bool lastChance=false) 
 {
   bool converged = false;
   Eigen::Affine3d T = Eigen::Affine3d::Identity();
@@ -434,6 +496,11 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   pcl::KdTree<pcl::PointXYZ>::Ptr subTree1 (new pcl::KdTreeFLANN<pcl::PointXYZ>());
   std::vector<MeasurementData> sub_index_pairs1;
   std::vector<MeasurementData> sub_index_pairs2;
+#ifdef USE_VARIANCES
+    std::vector<double> subVars1;
+    std::vector<double> subVars2;
+    std::vector<double> weights;
+#endif
   double error = 0;
  
   {
@@ -450,7 +517,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   std::vector<double> errorsSorted (errors);
   std::sort (errorsSorted.begin(), errorsSorted.end());
   double maxError = errorsSorted [numPoints];
-  if (sqrt(maxError) > 0.5)
+  failureError = maxError;
+  if (sqrt(maxError) > 0.1 && !lastChance)
   {
     omp_set_lock (&bundle_lock);
     omp_unset_lock (&bundle_lock);
@@ -479,6 +547,9 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
       newPoint.z = point.z;
       subCloud1->push_back (newPoint);
       sub_index_pairs1.push_back (index_pairs1 [i]);
+#ifdef USE_VARIANCES
+      subVars1.push_back (variances1 [i]);
+#endif
     }
   }
   subTree1->setInputCloud (subCloud1);
@@ -494,9 +565,51 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
       newPoint.z = point.z;
       subCloud2->push_back (newPoint);
       sub_index_pairs2.push_back (index_pairs2 [i]);
+#ifdef USE_VARIANCES
+      subVars2.push_back (variances2 [i]);
+#endif
     }
   }
+  Eigen::Matrix3d covariance1 = Eigen::Matrix3d::Zero();
+  Eigen::Matrix3d covariance2 = Eigen::Matrix3d::Zero();
+  Eigen::Vector3d mean1 = Eigen::Vector3d::Zero();
+  Eigen::Vector3d mean2 = Eigen::Vector3d::Zero();
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = subCloud1->begin(); i != subCloud1->end(); ++i)
+  {
+    mean1 += Eigen::Vector3d (i->x, i->y, i->z);
   }
+  mean1 /= subCloud1->size();
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = subCloud2->begin(); i != subCloud2->end(); ++i)
+  {
+    mean2 += Eigen::Vector3d (i->x, i->y, i->z);
+  }
+  mean2 /= subCloud2->size();
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = subCloud1->begin(); i != subCloud1->end(); ++i)
+  {
+    Eigen::Vector3d diff = Eigen::Vector3d (i->x, i->y, i->z) - mean1;
+    covariance1 += diff * diff.transpose();
+  }
+  covariance1 /= (subCloud1->size() - 1);
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = subCloud2->begin(); i != subCloud2->end(); ++i)
+  {
+    Eigen::Vector3d diff = Eigen::Vector3d (i->x, i->y, i->z) - mean2;
+    covariance2 += diff * diff.transpose();
+  }
+  covariance2 /= (subCloud2->size() - 1);
+  Eigen::JacobiSVD<Eigen::Matrix3d> svd1 (covariance1);
+  const Eigen::Vector3d singularValues1 = svd1.singularValues();
+  Eigen::JacobiSVD<Eigen::Matrix3d> svd2 (covariance2);
+  const Eigen::Vector3d singularValues2 = svd2.singularValues();
+  for (int i = 0; i < 3; ++i)
+  {
+    if ((singularValues1[i] < 0.01 || singularValues2[i] < 0.01) && !lastChance)
+    {
+      omp_set_lock (&bundle_lock);
+      omp_unset_lock (&bundle_lock);
+      return 0;
+    }
+  }
+ }
   
   error = std::numeric_limits<double>::infinity();
   std::vector<int> subPairs (subCloud2->size(), -1);
@@ -525,9 +638,10 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     {
       newError += subErrors [i];
     }
-    converged = newError/error > 0.999999 || errorsObtained.count (newError);
+    converged = newError/error > 0.999999999;// || errorsObtained.count (newError);
+
     errorsObtained.insert (newError);
-#if DEBUG_OUTPUT
+#ifdef DEBUG_OUTPUT
     omp_set_lock (&cout_lock);
     std::cout << "Error: " << newError << " Relative: " << newError/error << std::endl;
     omp_unset_lock (&cout_lock);
@@ -540,15 +654,36 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     double sum_den = 0.0;
     double scale;
 
+#ifdef USE_VARIANCES
+    double normalization1 = 0.0;
+    double normalization2 = 0.0;
+#endif
     for (size_t i = 0; i < subPairs.size(); ++i)
     {
       const pcl::PointXYZ & point1 = subCloud1->points[subPairs[i]];
+#ifdef USE_VARIANCES
+      double weight = 1.0/(sqrt(sqrt(subVars1[subPairs[i]])*sqrt(subVars2[i])));
+      weights.push_back (weight);
+      centroid1 += Eigen::Vector3d (point1.x, point1.y, point1.z)*weight;
+      normalization1 += weight;
+#else
       centroid1 += Eigen::Vector3d (point1.x, point1.y, point1.z);
+#endif
       const pcl::PointXYZ & point2 = subCloud2->points[i];
+#ifdef USE_VARIANCES
+      centroid2 += Eigen::Vector3d (point2.x, point2.y, point2.z)*weight;
+      normalization2 += weight;
+#else
       centroid2 += Eigen::Vector3d (point2.x, point2.y, point2.z);
+#endif
     }
+#ifdef USE_VARIANCES
+    centroid1 /= normalization1;
+    centroid2 /= normalization2;
+#else
     centroid1 /= subPairs.size();
     centroid2 /= subPairs.size();
+#endif
 
     for (size_t i = 0; i < subPairs.size(); ++i)
     {
@@ -576,20 +711,31 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
       left_zm.push_back (scale*l);
     }
 
-    Eigen::Quaterniond R = get_rotation (right_zm, left_zm);
+    Eigen::Quaterniond R = get_rotation (right_zm, left_zm, weights);
     T = Eigen::Translation3d(centroid1)*R*Eigen::Translation3d(-centroid2);
   }
-
-  for (size_t i = 0; i < 25; ++i)
+  pcl::PointCloud<pcl::PointXYZRGB> smallDebug;
+  size_t i;
+  pcl::octree::OctreePointCloud<pcl::PointXYZ> octree (1);
+  octree.setInputCloud (subCloud2);
+  octree.addPointsFromInputCloud ();
+  std::vector<pcl::PointXYZ> centers;
+  octree.getOccupiedVoxelCenters (centers);
+  for (i = 0; i < centers.size(); ++i)
   {
-    int index = (int)((double)subPairs.size()*rand()/(RAND_MAX+1.0));
-    assert (index >= 0);
+    std::vector<int> indices;
+    octree.voxelSearch (centers [i], indices);
+    int selection = (int)((double)indices.size()*rand()/(RAND_MAX+1.0));
+    assert (selection < (int)indices.size());
+    assert (selection >= 0);
+    int index = indices [selection];
     assert (index < (int)subPairs.size());
+    assert (index >= 0);
     const MeasurementData & indices1 = sub_index_pairs1 [subPairs[index]];
     const MeasurementData & indices2 = sub_index_pairs2 [index];
     const pcl::PointXYZ & point1 = subCloud1->points[subPairs[index]];
     const pcl::PointXYZ & point2 = subCloud2->points[index];
-    Eigen::Vector3i color ((int)(255.0*rand()/(RAND_MAX+1.0)), (int)(255.0*rand()/(RAND_MAX+1.0)), (int)(255.0*rand()/(RAND_MAX+1.0)));
+    Eigen::Vector3i color (0xF2, 0x00, 0x56);
     size_t key1, key2;
     Eigen::Vector3d position1 (point1.x, point1.y, point1.z);
     Eigen::Vector3d position2 (point2.x, point2.y, point2.z);
@@ -607,8 +753,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     omp_set_lock (&bundle_lock);  
     key1 = coordsFile.GetNextID (index1);
     key2 = coordsFile.GetNextID (index2);
-    CoordEntry e1 (key1, indices1.x, indices1.y, 0, 0, color, indices1.distance);
-    CoordEntry e2 (key2, indices2.x, indices2.y, 0, 0, color, indices2.distance);
+    CoordEntry e1 (key1, indices1.x, indices1.y, 0, 0, color, indices1.distance, indices1.variance);
+    CoordEntry e2 (key2, indices2.x, indices2.y, 0, 0, color, indices2.distance, indices2.variance);
     coordsFile.AddEntry (e1, index1);
     coordsFile.AddEntry (e2, index2);
 
@@ -624,10 +770,89 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     track.AddEntry (TrackEntry (index2, key2));
     tracksFile.AddTrack (track);
 
+    size_t nextIndex = toroFile.GetVertices().size();
+    Eigen::Vector3d test = matrix2euler (rotation1);
+    Toro3DVertex vertex (nextIndex, position[0], position[1], position[2],0, 0, 0);
+    toroFile.AddVertex (vertex);
+    Eigen::Vector3d originPos1 = translation1 - position1;//rotation1.transpose() * (position1 - translation1);
+    Eigen::Vector3d orient1 = matrix2euler (rotation1);
+    Toro3DEdge edge1 (nextIndex, index1, originPos1[0], originPos1[1], originPos1[2], orient1[0], orient1[1], orient1[2]);
+    toroFile.AddEdge (edge1);
+    Eigen::Vector3d originPos2 = translation2 - position2;//rotation2.transpose() * (position2 - translation2);
+    Eigen::Vector3d orient2 = matrix2euler (rotation2);
+    Toro3DEdge edge2 (nextIndex, index2, originPos2[0], originPos2[1], originPos2[2], orient2[0], orient2[1], orient2[2]);
+    toroFile.AddEdge (edge2);
+
     debugPoints.push_back (debugPoint);
+    smallDebug.push_back (debugPoint);
     omp_unset_lock (&bundle_lock);
   }
-  return 25;
+#ifdef PRINT_LOG
+  pcl::PointCloud<pcl::PointXYZRGB> combo1;
+  pcl::PointCloud<pcl::PointXYZRGB> combo2;
+  pcl::PointCloud<pcl::PointXYZRGB> combo3;
+  const pcl::PointCloud<pcl::PointXYZ>::Ptr c1 = subCloud1;
+  const pcl::PointCloud<pcl::PointXYZ>::Ptr c2 = subCloud2;
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = c1->begin(); i != c1->end(); ++i)
+  {
+    pcl::PointXYZRGB newP;
+    newP.x = i->x;
+    newP.y = i->y;
+    newP.z = i->z;
+    RgbConverter c;
+    c.r = 255;
+    c.g = 0;
+    c.b = 0;
+    newP.rgb = c.rgb;
+    combo1.push_back (newP);
+  }
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = c2->begin(); i != c2->end(); ++i)
+  {
+    pcl::PointXYZRGB newP;
+    newP.x = i->x; 
+    newP.y = i->y; 
+    newP.z = i->z;
+    RgbConverter c;
+    c.r = 0;
+    c.g = 255;
+    c.b = 0;
+    newP.rgb = c.rgb;
+    combo2.push_back (newP);
+  }
+  for (pcl::PointCloud<pcl::PointXYZ>::const_iterator i = c2->begin(); i != c2->end(); ++i)
+  {
+    pcl::PointXYZRGB newP;
+    RgbConverter c;
+    c.r = 255;
+    c.g = 255;
+    c.b = 255;
+    Eigen::Vector4d p (i->x, i->y, i->z, 1.0);
+    p = T*p;
+    newP.x = p[0]/p[3];
+    newP.y = p[1]/p[3];
+    newP.z = p[2]/p[3];
+    newP.rgb = c.rgb;
+    combo3.push_back (newP);
+  }
+  size_t viewIndex1 = filename1.find ("view");
+  size_t viewIndex2 = filename2.find ("view");
+  std::stringstream ss1, ss2, ss3, samples;
+  ss1 << "/tmp/kmatzen/" << filename1.substr (viewIndex1, 8) << "-" << filename2.substr (viewIndex2, 8) << "A.ply";
+  ss2 << "/tmp/kmatzen/" << filename1.substr (viewIndex1, 8) << "-" << filename2.substr (viewIndex2, 8) << "B.ply";
+  ss3 << "/tmp/kmatzen/" << filename1.substr (viewIndex1, 8) << "-" << filename2.substr (viewIndex2, 8) << "B_prime.ply";
+  samples << "/tmp/kmatzen/" << filename1.substr (viewIndex1, 8) << "-" << filename2.substr (viewIndex2, 8) << "samples.ply"; 
+  savePlyFile (ss1.str(), combo1);
+  savePlyFile (ss2.str(), combo2);
+  savePlyFile (ss3.str(), combo3);
+  savePlyFile (samples.str(), smallDebug);
+  omp_set_lock (&cerr_lock);
+  std::cerr << filename1 << " " << filename2 << ":" << std::endl;
+  std::cerr << T.rotation() << std::endl;
+  std::cerr << T.translation().transpose() << std::endl;
+  std::cerr << "---" << std::endl;
+  omp_unset_lock (&cerr_lock);
+#endif
+  return i;
 }
 
 int
@@ -636,6 +861,7 @@ main ( int argc, char * * argv )
   TIMED
 
   omp_init_lock (&cout_lock);
+  omp_init_lock (&cerr_lock);
   omp_init_lock (&mult_lock);
   omp_init_lock (&bundle_lock);
 
@@ -727,6 +953,28 @@ main ( int argc, char * * argv )
   TIME_END
 
   const std::vector<BundleCamera> & cameras = bundleFile.GetCameras();
+
+  Toro3DFile toroFile;
+  for (size_t i = 0; i < cameras.size(); ++i)
+  {
+    Toro3DVertex vertex;
+    const Eigen::Vector3d & t = cameras [i].GetT();
+    const Eigen::Matrix3d & R = cameras [i].GetR();
+
+    Eigen::Vector3d position = -R.transpose() * t;
+    Eigen::Matrix3d orientation = R.transpose();
+
+    double x = position [0];
+    double y = position [1];
+    double z = position [2];
+
+    Eigen::Vector3d orient = matrix2euler (orientation);
+    double phi = orient [0];
+    double theta = orient [1];
+    double psi = orient [2];
+
+    toroFile.AddVertex (Toro3DVertex (i, x, y, z, phi, theta, psi));
+  }
 
   size_t list_index = options.listFile.find_last_of ( "/" );
   std::vector<std::string> colorFilenames (imageList.size());
@@ -878,14 +1126,19 @@ main ( int argc, char * * argv )
   savePlyFile (options.output + "/debugOriginal.ply", debugOriginal);
   TIME_END
 
-  std::vector<bool> completed (imageList.size());
+  std::vector<int> completed (imageList.size());
   pcl::PointCloud<pcl::PointXYZRGB> debugPoints;
-  int count = 0;
 
   TIME_BEGIN ("All pairs ICP")
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic)
   for (int i = 0; i < (int)edges.size(); ++i)
   {
+#ifdef TEST_ONE
+    if (colorFilenames [i].find ("0073") == std::string::npos)
+    {
+       continue;
+    }
+#endif
     if (colorFilenames [i] == "" || depthFilenames [i] == "")
     {
       continue;
@@ -893,10 +1146,12 @@ main ( int argc, char * * argv )
     omp_set_lock (&cout_lock);
     std::cout << "Opening " << colorFilenames [i] << std::endl;
     omp_unset_lock (&cout_lock);
-#if 0
+#ifdef USE_VARIANCES
     std::vector<double> variances1;
 #endif
     std::vector<MeasurementData> indices1;
+    Eigen::Vector3d translation1;
+    Eigen::Matrix3d rotation1;
     std::pair<int,int> size1;
     pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1 = LoadCloud (
       colorFilenames [i],
@@ -905,10 +1160,12 @@ main ( int argc, char * * argv )
       scales[i],
       a, b, c, 
       size1,
-#if 0
+#ifdef USE_VARIANCES
       variances1, 
 #endif
-      indices1);
+      indices1,
+      translation1,
+      rotation1);
     if (cloud1->size() == 0)
     {
       continue;
@@ -919,17 +1176,24 @@ main ( int argc, char * * argv )
     tree->setEpsilon (0);
     
     int totalPoints = 0;
-    
+    double minError = std::numeric_limits<double>::infinity();
+    int minIndex;
     for (std::set<int>::const_iterator j_iter = edges [i].begin(); j_iter != edges [i].end(); ++j_iter)
     {
       int j = *j_iter;
+#ifdef TEST_ONE
+      if (colorFilenames [j].find ("0078") == std::string::npos)
+      {
+         continue;
+      }
+#endif
       if (edgesMulti [i].count (j) < 10)
       {
-        continue;
+        //continue;
       }
       bool skip;
 #pragma omp critical
-      skip = completed [j];
+      skip = completed [j] > 2;
       if (skip)
       {
         continue;
@@ -941,10 +1205,13 @@ main ( int argc, char * * argv )
       omp_set_lock (&cout_lock);
       std::cout << "Opening " << colorFilenames [j] << std::endl;
       omp_unset_lock (&cout_lock);
-#if 0
+#ifdef USE_VARIANCES
       std::vector<double> variances2;
 #endif
+      double error;
       std::vector<MeasurementData> indices2;
+      Eigen::Vector3d translation2;
+      Eigen::Matrix3d rotation2;
       std::pair<int,int> size2;
       pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2 = LoadCloud (
         colorFilenames [j],
@@ -953,10 +1220,12 @@ main ( int argc, char * * argv )
         scales[j],
         a, b, c, 
         size2,
-#if 0
+#ifdef USE_VARIANCES
         variances2, 
 #endif
-        indices2);
+        indices2,
+        translation2,
+        rotation2);
       if (cloud2->size() == 0)
       {
         continue;
@@ -964,7 +1233,11 @@ main ( int argc, char * * argv )
       int numPoints = icp_align (cloud1, 
                       cloud2, 
                       tree, 
-#if 0
+                      translation1,
+                      translation2,
+                      rotation1,
+                      rotation2,
+#ifdef USE_VARIANCES
                       variances1, 
                       variances2, 
 #endif
@@ -979,22 +1252,91 @@ main ( int argc, char * * argv )
                       bundleFile,
                       coordsFile, 
                       tracksFile, 
+                      toroFile,
                       size1,
                       size2,
                       i, j, 
-                      debugPoints);
+                      depthFilenames [i],
+                      depthFilenames [j],
+                      debugPoints, error);
+      if (!numPoints && error < minError)
+      {
+        minError = error;
+        minIndex = j;
+      }
       omp_set_lock (&cout_lock);
       std::cout << i << " " << j << " extracted " << numPoints << " points" << std::endl;
       omp_unset_lock (&cout_lock);
 #pragma omp critical
-      if (!completed [j] && numPoints)
+      if (numPoints)
       {
-        completed [j] = true;
-        omp_set_lock (&cout_lock);
-        std::cout << ++count << "/" << completed.size() << " complete" << std::endl;
-        omp_unset_lock (&cout_lock);
+        ++completed [j];
       }
       totalPoints += numPoints;
+    }
+    if (!totalPoints && !completed [i])
+    {
+      int j = minIndex;
+      std::cout << "Opening " << colorFilenames [j] << std::endl;
+      omp_unset_lock (&cout_lock);
+#ifdef USE_VARIANCES
+      std::vector<double> variances2;
+#endif
+      std::vector<MeasurementData> indices2;
+      Eigen::Vector3d translation2;
+      Eigen::Matrix3d rotation2;
+      std::pair<int,int> size2;
+      pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2 = LoadCloud (
+        colorFilenames [j],
+        depthFilenames [j],
+        cameras[j],
+        scales[j],
+        a, b, c,
+        size2,
+#ifdef USE_VARIANCES
+        variances2,
+#endif
+        indices2,
+        translation2,
+        rotation2);
+      if (cloud2->size() == 0)
+      {
+        continue;
+      }
+      double dummy;
+      int numPoints = icp_align (cloud1,
+                      cloud2,
+                      tree,
+                      translation1,
+                      translation2,
+                      rotation1,
+                      rotation2,
+#ifdef USE_VARIANCES
+                      variances1,
+                      variances2,
+#endif
+                      indices1,
+                      indices2,
+#if 0  
+                      keys [i],
+                      keys [j],
+                      maxKeys [i],
+                      maxKeys [j],
+#endif
+                      bundleFile,
+                      coordsFile,
+                      tracksFile,
+                      toroFile,
+                      size1,
+                      size2,
+                      i, j,
+                      depthFilenames [i],
+                      depthFilenames [j],
+                      debugPoints, dummy, true);
+      omp_set_lock (&cout_lock);
+      std::cout << i << " " << j << " extracted " << numPoints << " points" << std::endl;
+      std::cout << "@@@ Warning " << i << " " << j << " error " << dummy << "\a" << std::endl;
+      omp_unset_lock (&cout_lock);
     }
     if (false)//totalPoints)
     {
@@ -1023,11 +1365,15 @@ main ( int argc, char * * argv )
   bundleFile.save (options.output + "/bundle_augmented.out");
   coordsFile.save (options.output + "/coords_augmented.txt");
   tracksFile.save (options.output + "/tracks_augmented.txt");
+  toroFile.save (options.output + "/toro.graph");
   savePlyFile (options.output + "/points_augmented.ply", debugPoints);
 
   omp_destroy_lock (&cout_lock);
+  omp_destroy_lock (&cerr_lock);
   omp_destroy_lock (&mult_lock);
   omp_destroy_lock (&bundle_lock);
+
+  std::cout << "Done\a" << std::endl;
 
   return 0;
 }
