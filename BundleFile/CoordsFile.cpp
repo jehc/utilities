@@ -201,9 +201,10 @@ std::istream & operator>> (std::istream & in, CoordEntry & entry)
   getline (in, remainingLine);
   std::stringstream ss;
   ss << remainingLine;
-  if (!(ss >> entry.distance))
+  if (!(ss >> entry.distance >> entry.variance))
   {
     entry.distance = 0.0;
+    entry.variance = 0.0;
   }
  
   return in;
@@ -264,7 +265,7 @@ std::ostream & operator<< (std::ostream & out, const CoordEntry & entry)
   {
     out.precision (10);
     out << std::fixed;
-    out << " " << entry.distance;
+    out << " " << entry.distance << " " << entry.variance;
   }
 
   return out;
