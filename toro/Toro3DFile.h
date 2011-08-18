@@ -13,7 +13,7 @@ class Toro3DVertex
   friend std::istream & operator>> (std::istream &, Toro3DVertex &);
   friend std::ostream & operator<< (std::ostream &, const Toro3DVertex &);
 public:
-  Toro3DVertex () {}
+  Toro3DVertex () {Toro3DVertex(-1,0,0,0,0,0,0);}
   Toro3DVertex (int, double, double, double, double, double, double);
   int id;
   double x, y, z;

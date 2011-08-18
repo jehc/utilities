@@ -13,7 +13,6 @@ Toro3DVertex::Toro3DVertex (int id, double x, double y, double z, double phi, do
 , theta(theta)
 , psi(psi)
 {
-  std::cout << "Created " << phi << " " << theta << " " << psi << std::endl;
 }
 
 Toro3DEdge::Toro3DEdge (int observed, int observer, double x, double y, double z, double phi, double theta, double psi)
@@ -25,14 +24,13 @@ Toro3DEdge::Toro3DEdge (int observed, int observer, double x, double y, double z
 , roll(phi)
 , pitch(theta)
 , yaw(psi)
-, inf_11 (1e10), inf_12 (0), inf_13 (0), inf_14 (0), inf_15 (0), inf_16 (0)
-,             inf_22 (1e10), inf_23 (0), inf_24 (0), inf_25 (0), inf_26 (0)
-,                         inf_33 (1e10), inf_34 (0), inf_35 (0), inf_36 (0)
+, inf_11 (1), inf_12 (0), inf_13 (0), inf_14 (0), inf_15 (0), inf_16 (0)
+,             inf_22 (1), inf_23 (0), inf_24 (0), inf_25 (0), inf_26 (0)
+,                         inf_33 (1), inf_34 (0), inf_35 (0), inf_36 (0)
 ,                                     inf_44 (1), inf_45 (0), inf_46 (0)
 ,                                                 inf_55 (1), inf_56 (0)
 ,                                                             inf_66 (1)
 {
-  std::cout << "Created " << roll << "  " << pitch << " " << yaw << std::endl;
 }
 
 std::istream & operator>> (std::istream & in, Toro3DVertex & vertex)
