@@ -11,8 +11,11 @@
 #include <pcl/io/pcd_io.h>
 #include <opencv2/opencv.hpp>
 
+#include <omp.h>
+
 class HighResViewerWidget : public QGLWidget
 {
+omp_lock_t points_lock;
 std::string bundleFile;
 std::string listFile;
 std::string tuningFile;
@@ -66,7 +69,7 @@ int imageProjectionLocation;
 void setPoints();
 void setImage();
 void loadImage();
-void loadPoints();
+void loadPoints(int);
 void saveRange();
 
 public:

@@ -21,6 +21,7 @@ HighResViewerWidget::HighResViewerWidget (QWidget * parent, const std::string & 
 {
   setFocusPolicy (Qt::ClickFocus);
   setFixedSize (1024, 768);
+  omp_init_lock (&points_lock);
 }
 
 void
@@ -99,7 +100,19 @@ HighResViewerWidget::load ()
   imageTexcoords [5] = 0;
   imageTexcoords [6] = 1;
   imageTexcoords [7] = 1;
-
+/*
+  #pragma omp master
+  //#pragma omp parallel for 
+  for (int i = 0; i < (int)lowres.size(); ++i)
+  {
+    omp_set_lock (&points_lock);
+    if (!pointLoaded [i])
+    {
+      loadPoints (i);
+    }
+    omp_unset_lock (&points_lock);
+  }
+*/
 }
 
 void
@@ -146,9 +159,9 @@ HighResViewerWidget::loadImage ()
 }
 
 void
-HighResViewerWidget::loadPoints()
+HighResViewerWidget::loadPoints(int overlay)
 {
-  if (pointsCached.size() > 100)
+  if (false)//pointsCached.size() > 100)
   {
     int evictIndex = pointsCached.front();
     pointsCached.pop();
@@ -475,10 +488,12 @@ HighResViewerWidget::paintGL()
   glBindTexture (GL_TEXTURE_2D, 0);
   imageShader->release();
 
+  omp_set_lock (&points_lock);
   if (!pointLoaded [overlay])
   {
-    loadPoints();
+    loadPoints(overlay);
   }
+  omp_unset_lock (&points_lock);
   pointShader->bind();
   pointShader->enableAttributeArray (pointVertexLocation);
   pointShader->enableAttributeArray (pointColorLocation);
@@ -517,10 +532,12 @@ HighResViewerWidget::paintGL()
 void
 HighResViewerWidget::saveRange ()
 {
+  omp_set_lock (&points_lock);
   if (!pointLoaded[overlay])
   {
-    loadPoints();
+    loadPoints(overlay);
   }
+  omp_unset_lock (&points_lock);
 
   GLuint rangeDepthTexture;
   glGenTextures (1, &rangeDepthTexture);
