@@ -1,3 +1,6 @@
+//#define SMALL_RUN
+//#define MANIFEST_ONLY
+
 #include <iostream>
 #include <string>
 #include <set>
@@ -140,6 +143,7 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
   const std::vector<std::pair<BundleView,BundlePoint> > & bundlerPoints, const cv::Mat & a, const cv::Mat & b, const cv::Mat & c,
   bool highres)
 {
+#ifndef MANIFEST_ONLY
   pcl::PointCloud<pcl::PointSurfel>::Ptr points ( new pcl::PointCloud<pcl::PointSurfel>() );
   points->is_dense = false;
 
@@ -392,7 +396,7 @@ pcl::PointCloud<pcl::PointSurfel>::Ptr LoadCloud (
     i->normal_y = v[1];
     i->normal_z = v[2];
   }
-
+#endif
   Eigen::Vector3d position = -R.transpose() * t;
   points->sensor_origin_ = Eigen::Vector4f (position[0], position [1], position[2], 1.0);
   points->sensor_orientation_ = Eigen::Quaterniond (R.transpose()).cast<float>();
@@ -604,10 +608,17 @@ main ( int argc, char * * argv )
 
   size_t list_index = options.listFile.find_last_of ( "/" );
   TIME_BEGIN ( "Loading all point clouds" )
-#pragma omp parallel for
+#pragma omp parallel for schedule(dynamic)
   for ( int i = 0; i < ( int )imageList.size (); ++i )
   {
     const std::string & filename = imageList [i];
+#ifdef SMALL_RUN
+    if (filename.find ("view0078") == std::string::npos &&
+        filename.find ("view0106") == std::string::npos)
+    {
+      continue;
+    }
+#endif
     std::string colorFilename = options.listFile;
     if ( list_index == std::string::npos )
     {
