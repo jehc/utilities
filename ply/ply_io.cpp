@@ -1,3 +1,5 @@
+#define NO_CONFIDENCE
+
 #include "ply_io.h"
 #include "ply.h"
 #include <fstream>
@@ -163,7 +165,7 @@ loadPlyFileGL (const std::string & filename, std::vector<GLfloat> & vertices, st
   for (int i = 0; i < confidences.size(); ++i)
   {
     float scaled = confidences [i]/max_confidence;
-    colors [3*i] = colors [3*i+1] = colors [3*i+2] = 255*scaled;
+    colors [3*i] = colors [3*i+1] = colors [3*i+2] = (uint8_t)(255*scaled);
   }
 
   indices.reserve (3*faces.size());
@@ -295,7 +297,9 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
     {"diffuse_red", Uint8, Uint8, offsetof(Surfel,r), 0, 0, 0, 0},
     {"diffuse_green", Uint8, Uint8, offsetof(Surfel,g), 0, 0, 0, 0},
     {"diffuse_blue", Uint8, Uint8, offsetof(Surfel,b), 0, 0, 0, 0},
+#ifndef NO_CONFIDENCE
     {"confidence", Float32, Float32, offsetof(Surfel,confidence), 0, 0, 0, 0},
+#endif
     {"radius", Float32, Float32, offsetof(Surfel, radius),0,0,0,0},
     {"curvature", Float32, Float32, offsetof(Surfel, curvature), 0, 0, 0, 0}
   };
@@ -361,7 +365,11 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
 
   describe_element_ply (ply, "vertex", vertices.size());
 
+#ifdef NO_CONFIDENCE
+  for (int i = 0; i < 11; ++i)
+#else
   for (int i = 0; i < 12; ++i)
+#endif
   {
     describe_property_ply (ply, &vert_props[i]);
   }
@@ -442,7 +450,9 @@ savePlyFilePointCloud (const std::string & filename, const pcl::PointCloud<pcl::
     {"nx", Float32, Float32, offsetof(Surfel, nx), 0, 0, 0, 0},
     {"ny", Float32, Float32, offsetof(Surfel, ny), 0, 0, 0, 0},
     {"nz", Float32, Float32, offsetof(Surfel, nz), 0, 0, 0, 0},
+#ifndef NO_CONFIDENCE
     {"confidence", Float32, Float32, offsetof(Surfel, confidence), 0, 0, 0, 0},
+#endif
     {"radius", Float32, Float32, offsetof (Surfel, radius), 0, 0, 0, 0},
     {"curvature", Float32, Float32, offsetof(Surfel, curvature), 0, 0, 0, 0}
   };
@@ -454,7 +464,11 @@ savePlyFilePointCloud (const std::string & filename, const pcl::PointCloud<pcl::
   }
   PlyFile * ply = write_ply (file, 1, elem_names, PLY_BINARY_LE);
   describe_element_ply (ply, "vertex", pointCloud.size());
+#ifdef NO_CONFIDENCE
+  for (int i = 0; i < 11; ++i)
+#else
   for (int i = 0; i < 12; ++i)
+#endif
   {
     describe_property_ply (ply, &vert_props[i]);
   }
@@ -508,7 +522,9 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
     {"diffuse_red", Uint8, Uint8, offsetof(Vertex,r), 0, 0, 0, 0},
     {"diffuse_green", Uint8, Uint8, offsetof(Vertex,g), 0, 0, 0, 0},
     {"diffuse_blue", Uint8, Uint8, offsetof(Vertex,b), 0, 0, 0, 0},
+#ifndef NO_CONFIDENCE
     {"confidence", Float32, Float32, offsetof(Vertex,confidence), 0, 0, 0, 0}
+#endif
   };
 
   static PlyProperty range_props[] = 
@@ -571,7 +587,11 @@ savePlyFileRangeImage (const std::string & filename, const pcl::PointCloud<pcl::
 
   describe_element_ply (ply, "vertex", vertices.size());
 
+#ifdef NO_CONFIDENCE
+  for (int i = 0; i < 6; ++i)
+#else
   for (int i = 0; i < 7; ++i)
+#endif
   {
     describe_property_ply (ply, &vert_props[i]);
   }

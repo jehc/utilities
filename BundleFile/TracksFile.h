@@ -32,6 +32,8 @@ public:
   TracksFile (const std::string &);
   void AddTrack (const Track & track) { tracks.push_back (track); }
   void save (const std::string &) const;
+  const std::vector<Track> & GetTracks () const { return tracks; }
+  void AddTrackEntry (const TrackEntry & entry, size_t trackID) { tracks [trackID].AddEntry (entry); }
 };
 
 #endif

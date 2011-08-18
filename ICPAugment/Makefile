@@ -1,6 +1,6 @@
-CXXFLAGS     = -g -fopenmp -Wall -Wno-non-virtual-dtor
+CXXFLAGS     = -g3 -fopenmp -Wall -Wno-non-virtual-dtor
 INCLUDE	     = -I/home/kmatzen/local/include/pcl-1.0 -I/home/kmatzen/local/include/eigen3
-LIBS         = -L/home/kmatzen/local/lib -lbundlefile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lply -lkvo -lm -lboost_iostreams
+LIBS         = -L/home/kmatzen/local/lib -lbundlefile -lopencv_core -lopencv_highgui -lpcl_features -lpcl_kdtree -lpcl_surface -lpcl_io -lboost_system -lboost_filesystem -lpcl_filters -lboost_thread -lplyfile -lkvo -lm -lboost_iostreams -lpcl_octree -ltorofile
  
 all:	ICPAugment
 
