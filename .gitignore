@@ -1,3 +1,6 @@
+kvo_viewer/Makefile
+highres/highres
+highres/Makefile
 *~
 Kinect2Clouds/Kinect2Clouds
 *.nfs*
