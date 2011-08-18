@@ -5,7 +5,7 @@
 TEMPLATE = app
 TARGET = 
 DEPENDPATH += .
-INCLUDEPATH += . /home/kmatzen/utilities/include /usr/local/include/eigen3 /home/kmatzen/build/qt/qt-everywhere-opensource-src-4.7.1/include/Qt3D /home/kmatzen/build/qt/qt-everywhere-opensource-src-4.7.1/demos/shared/
+INCLUDEPATH += . /home/kmatzen/utilities/include /usr/local/include/eigen3 /usr/include/qt4/Qt3D /home/kmatzen/build/qt/qt-everywhere-opensource-src-4.7.1/demos/shared/
 LIBS += -L/home/kmatzen/utilities/lib -lkvo -lGLEW -L/home/kmatzen/build/qt/qt-everywhere-opensource-src-4.7.1/lib -lQt3D -L/home/kmatzen/build/qt/qt-everywhere-opensource-src-4.7.1/demos/shared -ldemo_shared
 
 QMAKE_CXXFLAGS += -fopenmp -DNDEBUG
