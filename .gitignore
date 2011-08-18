@@ -1,3 +1,4 @@
+CombineToroBundler/CombineToroBundler
 *~
 Kinect2Clouds/Kinect2Clouds
 *.nfs*
@@ -44,6 +45,7 @@ bundler-v0.4-source/lib/jpeg/Release/*
 *.old
 *.ply
 *.a
+*.so*
 *.pcd
 *.out
 CalibrateDepth/CalibrateDepth
