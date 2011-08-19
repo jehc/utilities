@@ -1,3 +1,4 @@
+#define CLOUD_CACHE
 //#define PRINT_LOG
 #define SAVE_DOT
 //#define SMALL_RUN
@@ -45,6 +46,7 @@ omp_lock_t cout_lock;
 omp_lock_t cerr_lock;
 omp_lock_t mult_lock;
 omp_lock_t bundle_lock;
+omp_lock_t cloud_lock;
 
 struct AlignmentDetails
 {
@@ -126,8 +128,35 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   std::vector<double> & variances,
   std::vector<MeasurementData> & indices,
   Eigen::Vector3d & translation,
+#ifdef CLOUD_CACHE
+  Eigen::Matrix3d & rotation,
+  size_t cacheSize)
+#else
   Eigen::Matrix3d & rotation)
+#endif
 {
+#ifdef CLOUD_CACHE
+  omp_set_lock (&cloud_lock);
+  static std::map<std::string,pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr> cloud_cache;
+  static std::map<std::string,std::pair<int,int> > size_cache;
+  static std::map<std::string,std::vector<double> > variances_cache;
+  static std::map<std::string,std::vector<MeasurementData> > measurements_cache;
+  static std::map<std::string,Eigen::Vector3d> translation_cache;
+  static std::map<std::string,Eigen::Matrix3d> rotation_cache;
+  if (cloud_cache.count (colorFilename))
+  {
+    size = size_cache [colorFilename];
+    variances = variances_cache [colorFilename];
+    indices = measurements_cache [colorFilename];
+    translation = translation_cache [colorFilename];
+    rotation = rotation_cache [colorFilename];
+    pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr retval = cloud_cache [colorFilename];
+    omp_unset_lock (&cloud_lock);
+    return retval;
+  }
+  omp_unset_lock (&cloud_lock);
+#endif
+
   pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr points ( new pcl::PointCloud<pcl::PointXYZRGBNormal>() );
 
   cv::Mat colorImageDist = cv::imread ( colorFilename );
@@ -137,10 +166,7 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   std::ifstream depthInput ( depthFilename.c_str () );
   if ( !depthInput )
   {
-/*    omp_set_lock (&cout_lock);
-    std::cout << "Could not load file " << depthFilename << std::endl;
-    omp_unset_lock (&cout_lock);
-*/    return points;
+    return points;
   }
 
   uint32_t rows, cols;
@@ -225,7 +251,6 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
   {
     for ( int indexI = 0; indexI < depthMap.cols; indexI += 4)
     {
-#if 1 //#ifdef USE_VARIANCES
       double sum = 0;
       double sum_sq = 0;
       int n = 0;
@@ -262,7 +287,6 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       }
 
       double var = sum_sq/(n-1);
-#endif
       double measurement = depthMap.at<float>(indexJ, indexI);
       if (isnan(measurement) || isinf(measurement) || measurement <= 0)
       {
@@ -314,12 +338,31 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       c.b = color[0];
       point.rgb = c.rgb;
       points->push_back (point);
-#ifdef USE_VARIANCES
       variances.push_back (var);
-#endif
       indices.push_back (MeasurementData(indexI, indexJ, distance, var));
     }
   }
+
+#ifdef CLOUD_CACHE
+  omp_set_lock (&cloud_lock);
+  size_cache [colorFilename] = size;
+  variances_cache [colorFilename] = variances;
+  measurements_cache [colorFilename] = indices;
+  translation_cache [colorFilename] = translation;
+  rotation_cache [colorFilename] = rotation;
+  cloud_cache [colorFilename] = points;
+  if (cloud_cache.size() > cacheSize)
+  {
+    std::string toEvict = cloud_cache.begin()->first;
+    size_cache.erase (toEvict);
+    variances_cache.erase (toEvict);
+    measurements_cache.erase (toEvict);
+    translation_cache.erase (toEvict);
+    rotation_cache.erase (toEvict);
+    cloud_cache.erase (toEvict);
+  }
+  omp_unset_lock (&cloud_lock);
+#endif
 
   return points;
 }
@@ -332,6 +375,9 @@ struct Options
   std::string scale;
   std::string coordsFile;
   std::string tracksFile;
+#ifdef CLOUD_CACHE
+  size_t cacheSize;
+#endif
   bool highres;
 
   void
@@ -343,6 +389,9 @@ struct Options
     std::cout << "  --tracks [string]" << std::endl;
     std::cout << "  --output [string]" << std::endl;
     std::cout << "  --scale [string]" << std::endl;
+#ifdef CLOUD_CACHE
+    std::cout << "  --cache_size [uint]" << std::endl;
+#endif
     std::cout << "  --help" << std::endl;
     exit ( 1 );
   }
@@ -359,6 +408,9 @@ struct Options
       { "scale", required_argument,         0,                         's'                                         },
       { "coords", required_argument, 0, 'c'},
       { "tracks", required_argument, 0, 't'},
+#ifdef CLOUD_CACHE
+      { "cache_size", required_argument, 0, 'z'},
+#endif
       { 0,              0,                         0,                         0                                           } };
 
     bool bundleFileSet = false;
@@ -367,8 +419,11 @@ struct Options
     bool scaleSet = false;
     bool coordsSet = false;
     bool tracksSet = false;
+#ifdef CLOUD_CACHE
+    bool cacheSizeSet = false;
+#endif
 
-    while ( ( c = getopt_long ( argc, argv, "b:l:o:s:c:t:", longopts, &indexptr ) ) != -1 )
+    while ( ( c = getopt_long ( argc, argv, "z:b:l:o:s:c:t:", longopts, &indexptr ) ) != -1 )
     {
       std::stringstream ss;
       switch ( c )
@@ -397,6 +452,17 @@ struct Options
         scaleSet = true;
         scale = std::string (optarg);
         break;
+#ifdef CLOUD_CACHE
+      case 'z':
+        cacheSizeSet = true;
+        ss << optarg;
+        ss >> cacheSize;
+        if (!ss)
+        {
+          help();
+        }
+        break;
+#endif
       default:
         std::cout << "Unknown option " << c << std::endl;
         help ();
@@ -430,7 +496,13 @@ struct Options
       std::cout << "coords option is required" << std::endl;
       help();
     }
-
+#ifdef CLOUD_CACHE
+    if (!cacheSizeSet)
+    {
+      std::cout << "cache_size option is required" << std::endl;
+      help();
+    }
+#endif
     if (!tracksSet)
     {
       std::cout << "tracks option is requried" << std::endl;
@@ -992,6 +1064,7 @@ main ( int argc, char * * argv )
   omp_init_lock (&cerr_lock);
   omp_init_lock (&mult_lock);
   omp_init_lock (&bundle_lock);
+  omp_init_lock (&cloud_lock);
 
   printCommand ( argc, argv );
 
@@ -1280,7 +1353,12 @@ main ( int argc, char * * argv )
       variances,
       measurements,
       translation,
+#ifdef CLOUD_CACHE
+      rotation,
+      options.cacheSize);
+#else
       rotation);
+#endif
     if (cloud->size() == 0)
     {
       continue;
@@ -1311,7 +1389,12 @@ main ( int argc, char * * argv )
       variances1,
       measurements1,
       translation1,
+#ifdef CLOUD_CACHE
+      rotation1,
+      options.cacheSize);
+#else
       rotation1);
+#endif
     if (cloud1->size() == 0)
     {
       continue;
@@ -1339,7 +1422,12 @@ main ( int argc, char * * argv )
         variances2,
         measurements2,
         translation2,
+#ifdef CLOUD_CACHE
+        rotation2,
+        options.cacheSize);
+#else
         rotation2);
+#endif
       if (cloud2->size() == 0)
       {
         continue;
@@ -1402,9 +1490,12 @@ main ( int argc, char * * argv )
     {
       bad_cameras.insert (i);
       omp_set_lock (&bundle_lock);
-      bundleFile.InvalidateCamera (i);
-      colorFilenames [i] = "";
-      depthFilenames [i] = "";
+      if (colorFilenames [i] != "")
+      {
+        bundleFile.InvalidateCamera (i);
+        colorFilenames [i] = "";
+        depthFilenames [i] = "";
+      }
       omp_unset_lock (&bundle_lock);  
     }
   }
@@ -1492,7 +1583,12 @@ main ( int argc, char * * argv )
       variances1, 
       measurements1,
       translation1,
+#ifdef CLOUD_CACHE
+      rotation1,
+      options.cacheSize);
+#else
       rotation1);
+#endif
     if (cloud1->size() == 0)
     {
       continue;
@@ -1520,7 +1616,12 @@ main ( int argc, char * * argv )
         variances2, 
         measurements2,
         translation2,
+#ifdef CLOUD_CACHE
+        rotation2,
+        options.cacheSize);
+#else
         rotation2);
+#endif
       if (cloud2->size() == 0)
       {
         continue;
@@ -1546,6 +1647,7 @@ main ( int argc, char * * argv )
   omp_destroy_lock (&cerr_lock);
   omp_destroy_lock (&mult_lock);
   omp_destroy_lock (&bundle_lock);
+  omp_destroy_lock (&cloud_lock);
 
   std::cout << "Done\a" << std::endl;
 
