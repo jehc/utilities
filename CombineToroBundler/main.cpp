@@ -44,6 +44,7 @@ main (int argc, char ** argv)
     const Toro3DVertex & vertex = vertices [i];
     if (vertex.id < 0)
     {
+      bundleFile.InvalidateCamera (i);
       continue;
     }
     Eigen::Vector3d translation (vertex.x, vertex.y, vertex.z);
