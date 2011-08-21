@@ -593,7 +593,7 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   {
   std::vector<int> pairs (cloud2->size());
   std::vector<double> errors (cloud2->size());
-  size_t numPoints = errors.size()/2;
+  size_t numPoints = (size_t)(errors.size()*0.7);
 
   for (size_t index = 0; index < cloud2->size(); ++index)
   {
@@ -749,9 +749,11 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     T = Eigen::Translation3d(centroid1)*R*Eigen::Translation3d(-centroid2);
   }
 
-  Eigen::Vector3d translationObserved = translation2 + T.translation();
+  Eigen::Affine3d fullT2 = T*Eigen::Translation3d (translation2)*Eigen::Quaterniond (rotation2);
+
+  Eigen::Vector3d translationObserved = fullT2.translation();
   const Eigen::Vector3d translationObserver = translation1;
-  Eigen::Matrix3d rotationObserved = T.rotation()*rotation2;
+  Eigen::Matrix3d rotationObserved = fullT2.rotation();
   const Eigen::Matrix3d rotationObserver = rotation1;
 
   Eigen::Vector3d observationTranslation = rotationObserved.transpose()*(translationObserver - translationObserved);
@@ -949,7 +951,7 @@ ComputeAlignmentGoodness(pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
 
   std::vector<double> errors (cloud2->size());
   std::vector<size_t> pairs (cloud2->size());
-  size_t numPoints = errors.size()/2;
+  size_t numPoints = (size_t)(errors.size()*0.7);
   std::vector<int> k_indices (1);
   std::vector<float> k_sqr_distances (1);
 
@@ -1545,6 +1547,10 @@ main ( int argc, char * * argv )
   for (size_t i = 0; i < alignmentDetails.size(); ++i)
   {
     const AlignmentDetails & details = alignmentDetails [i];
+    if (bad_cameras.count (details.i) || bad_cameras.count (details.j))
+    {
+      continue;
+    }
     if (details.cost == 0.0)
     {
 #ifdef SAVE_DOT
