@@ -1,0 +1,60 @@
+# vim: ft=python
+
+import os
+arch	= os.uname()[4] 
+
+lib_name		= 'mrf'
+install_dir		= '/usr/local/lib'
+
+include_dirs	= []
+libs			= []
+lib_dirs		= [ './' ]
+
+opts = Options( 'options.cache' )
+opts.AddOptions(
+	BoolOption( 'debug', 'Compile with debugging symbols.', False ),
+)
+
+env = Environment(
+	options		= opts,
+	LD			= 'ld',
+	LIBS		= libs,
+	LIBPATH		= lib_dirs
+)
+
+if env['debug']:
+	env.Prepend(
+		CCFLAGS		= [ '-g', '-Wall' ],
+		LINKFLAGS	= [ '-g', '-Wall' ],
+	)
+else:
+	env.Prepend(
+		CCFLAGS		= [ '-O2', '-W', '-Wall' ],
+		LINKFLAGS	= [ '-O2', '-W', '-Wall' ],
+	)
+
+if arch == 'x86_64':
+	env.Prepend( CPPDEFINES = [ 'USE_64_BIT_PTR_CAST' ] )
+
+sources = Split( """
+		mrf.cpp
+		ICM.cpp
+		GCoptimization.cpp
+		graph.cpp
+		maxflow.cpp
+		MaxProdBP.cpp
+		LinkedBlockList.cpp
+		regions-maxprod.cpp
+	""" )
+
+lib = env.SharedLibrary( lib_name, sources )
+env.Install( install_dir, lib )
+env.Default( lib )
+env.Alias( 'install', install_dir )
+
+example_env = env.Copy() ;
+example_env.Append( LIBS = [ lib_name ] )
+example_env.Program( 'example', 'example.cpp' )
+example_env.Default( 'example' )
+
+

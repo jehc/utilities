@@ -1,0 +1,16 @@
+06/11/2006: Olga: fixed memory leak in CSoptimization.cpp
+posted updated version 1.6
+
+06/2006: daniel: updated makefile
+
+08/25/2006: Vlad: added TRW-S
+(called by him version 1.7)
+
+09/06/2006: Paul Davis (pjdavis@engineering.uiowa.edu):
+ Added conditional typedef to support 64 bit architectures.
+ - Files affected: graph.h, graph.cpp
+ Added a SConstruct to support the SCons build system.
+ - Automatic detection if running on x86_64 platform
+ - Shared library compilation
+ 
+ 
