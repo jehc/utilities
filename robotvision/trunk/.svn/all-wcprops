@@ -1,0 +1,191 @@
+K 25
+svn:wc:ra_dav:version-url
+V 39
+/data/svn/robotvision/!svn/ver/11/trunk
+END
+transformations.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/data/svn/robotvision/!svn/ver/11/trunk/transformations.h
+END
+maths_utils.h
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/data/svn/robotvision/!svn/ver/11/trunk/maths_utils.h
+END
+abstract_view.h
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/data/svn/robotvision/!svn/ver/11/trunk/abstract_view.h
+END
+sparse_cholesky.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/data/svn/robotvision/!svn/ver/11/trunk/sparse_cholesky.h
+END
+keble_college.txt
+K 25
+svn:wc:ra_dav:version-url
+V 56
+/data/svn/robotvision/!svn/ver/5/trunk/keble_college.txt
+END
+rss2010_demo.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 56
+/data/svn/robotvision/!svn/ver/11/trunk/rss2010_demo.cpp
+END
+quadtree.h
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/data/svn/robotvision/!svn/ver/11/trunk/quadtree.h
+END
+sim3.h
+K 25
+svn:wc:ra_dav:version-url
+V 46
+/data/svn/robotvision/!svn/ver/11/trunk/sim3.h
+END
+gui_window.h
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/data/svn/robotvision/!svn/ver/11/trunk/gui_window.h
+END
+sparse_matrix.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/data/svn/robotvision/!svn/ver/11/trunk/sparse_matrix.cpp
+END
+VERSION.txt
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/data/svn/robotvision/!svn/ver/11/trunk/VERSION.txt
+END
+gui_view.h
+K 25
+svn:wc:ra_dav:version-url
+V 49
+/data/svn/robotvision/!svn/ver/5/trunk/gui_view.h
+END
+image.h
+K 25
+svn:wc:ra_dav:version-url
+V 47
+/data/svn/robotvision/!svn/ver/11/trunk/image.h
+END
+COPYING
+K 25
+svn:wc:ra_dav:version-url
+V 46
+/data/svn/robotvision/!svn/ver/5/trunk/COPYING
+END
+maths_utils.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/data/svn/robotvision/!svn/ver/11/trunk/maths_utils.cpp
+END
+CMakeLists.txt
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/data/svn/robotvision/!svn/ver/11/trunk/CMakeLists.txt
+END
+abstract_view.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/data/svn/robotvision/!svn/ver/11/trunk/abstract_view.cpp
+END
+opencv_helper.h
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/data/svn/robotvision/!svn/ver/5/trunk/opencv_helper.h
+END
+INSTALL.txt
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/data/svn/robotvision/!svn/ver/11/trunk/INSTALL.txt
+END
+graph_optimizer.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/data/svn/robotvision/!svn/ver/11/trunk/graph_optimizer.h
+END
+rectangle.h
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/data/svn/robotvision/!svn/ver/11/trunk/rectangle.h
+END
+gui_window.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 54
+/data/svn/robotvision/!svn/ver/11/trunk/gui_window.cpp
+END
+gui_view.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/data/svn/robotvision/!svn/ver/11/trunk/gui_view.cpp
+END
+bundle_adjuster.h
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/data/svn/robotvision/!svn/ver/11/trunk/bundle_adjuster.h
+END
+stopwatch.h
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/data/svn/robotvision/!svn/ver/11/trunk/stopwatch.h
+END
+image.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 49
+/data/svn/robotvision/!svn/ver/11/trunk/image.cpp
+END
+COPYING.LESSER
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/data/svn/robotvision/!svn/ver/5/trunk/COPYING.LESSER
+END
+ba_demo.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/data/svn/robotvision/!svn/ver/11/trunk/ba_demo.cpp
+END
+sparse_matrix.h
+K 25
+svn:wc:ra_dav:version-url
+V 55
+/data/svn/robotvision/!svn/ver/11/trunk/sparse_matrix.h
+END
+opencv_helper.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 56
+/data/svn/robotvision/!svn/ver/5/trunk/opencv_helper.cpp
+END
+README.txt
+K 25
+svn:wc:ra_dav:version-url
+V 49
+/data/svn/robotvision/!svn/ver/8/trunk/README.txt
+END

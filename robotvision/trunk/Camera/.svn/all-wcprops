@@ -1,0 +1,23 @@
+K 25
+svn:wc:ra_dav:version-url
+V 46
+/data/svn/robotvision/!svn/ver/11/trunk/Camera
+END
+abstract_camera.h
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/data/svn/robotvision/!svn/ver/11/trunk/Camera/abstract_camera.h
+END
+linear_camera.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/data/svn/robotvision/!svn/ver/11/trunk/Camera/linear_camera.cpp
+END
+linear_camera.h
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/data/svn/robotvision/!svn/ver/11/trunk/Camera/linear_camera.h
+END
