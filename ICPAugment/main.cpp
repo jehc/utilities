@@ -1,10 +1,20 @@
+#define HIGHRES
+#define CROP
+//#define JOINT_BILATERAL_DATA
+//#define ONLY_CENTER
+//#define THRESHOLD_DEPTH
+#define USE_Z_WEIGHT
+#define WEIGHTS
 #define CLOUD_CACHE
-//#define PRINT_LOG
+#define PRINT_LOG
 #define SAVE_DOT
+#define WHITELIST
+//#define IGNORE_CC_THRESHOLD
 //#define SMALL_RUN
-//#define DEBUG_OUTPUT
+#define DEBUG_OUTPUT
 #define USE_VARIANCES
 //#define TEST_ONE
+//#define NO_CORRECTION
 
 #include <iostream>
 #include <string>
@@ -36,6 +46,7 @@
 #include "CoordsFile.h"
 #include "TracksFile.h"
 #include "Toro3DFile.h"
+#include "BPSFMFile.h"
 
 #define TIMED struct timeval tic, toc;
 #define TIME_BEGIN( msg ) std::cout << msg << std::endl; gettimeofday ( &tic, 0 );
@@ -193,6 +204,12 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
     throw std::exception ();
   }
   depthInput.close ();
+#ifdef HIGHRES
+  cv::Mat bigDepth;
+  cv::resize (depthMapDist, bigDepth, cv::Size(2*depthMapDist.cols, 2*depthMapDist.rows), 0, 0, cv::INTER_NEAREST);
+  depthMapDist = bigDepth;
+#endif
+
   cv::Mat cameraMatrixCV ( 3, 3, CV_32FC1 );
   cameraMatrixCV.at<float> ( 0, 0 ) = camera.GetF ();
   cameraMatrixCV.at<float> ( 0, 1 ) = 0;
@@ -242,15 +259,29 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
       double depthRaw = depthMap.at<float>(j, i);
       if (depthRaw != 0)
       {
+#ifdef NO_CORRECTION
+        depthMap.at<float>(j, i) = b.at<float>(depthMap.rows/2, depthMap.cols/2)*depthRaw;
+#else
         depthMap.at<float>(j, i) = a.at<float>(j, i)*pow(depthRaw, 2.0) + b.at<float>(j, i)*depthRaw + c.at<float>(j, i);
+#endif
       }
     }
   }
 
+#ifdef CROP
+  for ( int indexJ = 20; indexJ < depthMap.rows; indexJ += 4)
+#else
   for ( int indexJ = 0; indexJ < depthMap.rows; indexJ += 4)
+#endif
   {
     for ( int indexI = 0; indexI < depthMap.cols; indexI += 4)
     {
+#ifdef ONLY_CENTER
+      if (indexJ < 100 || indexI < 100 || indexJ > depthMap.rows - 100 || indexI > depthMap.cols - 100)
+      {
+        continue;
+      }
+#endif
       double sum = 0;
       double sum_sq = 0;
       int n = 0;
@@ -288,12 +319,21 @@ pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr LoadCloud (
 
       double var = sum_sq/(n-1);
       double measurement = depthMap.at<float>(indexJ, indexI);
-      if (isnan(measurement) || isinf(measurement) || measurement <= 0)
+#ifdef USE_Z_WEIGHT
+      var = measurement;
+#endif
+      if (isnan(measurement) || isinf(measurement) || measurement <= 0.2)
       {
         continue;
       }
+#ifdef THRESHOLD_DEPTH
+      if (measurement > 3.5)
+      {
+        continue;
+      }
+#endif
 
-      Eigen::Vector3d p ( ( double )indexI, (double)depthMap.rows - 1 - ( double )indexJ, 1 );
+      Eigen::Vector3d p ( ( double )indexI, (double)colorImage.rows - 1 - ( double )indexJ, 1 );
       p = scale * measurement * p;
 
       p = cameraMatrix.inverse () * p;
@@ -375,6 +415,7 @@ struct Options
   std::string scale;
   std::string coordsFile;
   std::string tracksFile;
+  bool constrainRotation;
 #ifdef CLOUD_CACHE
   size_t cacheSize;
 #endif
@@ -389,6 +430,7 @@ struct Options
     std::cout << "  --tracks [string]" << std::endl;
     std::cout << "  --output [string]" << std::endl;
     std::cout << "  --scale [string]" << std::endl;
+    std::cout << "  --constrain_rotation" << std::endl;
 #ifdef CLOUD_CACHE
     std::cout << "  --cache_size [uint]" << std::endl;
 #endif
@@ -397,6 +439,7 @@ struct Options
   }
 
   Options ( int argc, char * * argv )
+  : constrainRotation (false)
   {
     int c;
     int indexptr;
@@ -408,6 +451,7 @@ struct Options
       { "scale", required_argument,         0,                         's'                                         },
       { "coords", required_argument, 0, 'c'},
       { "tracks", required_argument, 0, 't'},
+      { "constrain_rotation", no_argument, 0, 'r'},
 #ifdef CLOUD_CACHE
       { "cache_size", required_argument, 0, 'z'},
 #endif
@@ -451,6 +495,9 @@ struct Options
       case 's':
         scaleSet = true;
         scale = std::string (optarg);
+        break;
+      case 'r':
+        constrainRotation = true;
         break;
 #ifdef CLOUD_CACHE
       case 'z':
@@ -549,7 +596,7 @@ get_rotation (const std::vector<Eigen::Vector3d> & right, const std::vector<Eige
   return Eigen::Quaterniond(R);
 }
 
-void
+Eigen::Affine3d
 icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1, 
            pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud2, 
            pcl::KdTree<pcl::PointXYZRGBNormal>::Ptr tree1, 
@@ -560,11 +607,13 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
            const std::vector<double> & variances1, 
            const std::vector<double> & variances2, 
            const std::vector<MeasurementData> & index_pairs1, 
-           const std::vector<MeasurementData> & index_pairs2, 
+           const std::vector<MeasurementData> & index_pairs2,
+           bool constrainRotation, 
            BundleFile & bundleFile,
            CoordsFile & coordsFile, 
            TracksFile & tracksFile, 
            Toro3DFile & toroFile,
+           BPSFMFile & bpsfmFile,
            const std::pair<int,int> & size1,
            const std::pair<int,int> & size2,
            int cloudID1, 
@@ -619,7 +668,7 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
 
   for (size_t i = 0; i < cloud1->size(); ++i)
   {
-    if (cloud1Mark [i])
+    if (true)//cloud1Mark [i])
     {
       const pcl::PointXYZRGBNormal & point = cloud1->points [i];
       pcl::PointXYZ newPoint;
@@ -638,6 +687,7 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   }
   subTree1->setInputCloud (subCloud1);
   subTree1->setEpsilon (0);
+
   for (size_t i = 0; i < cloud2->size(); ++i)
   {
     if (cloud2Mark [i])
@@ -661,7 +711,8 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   
   error = std::numeric_limits<double>::infinity();
   std::vector<int> subPairs (subCloud2->size(), -1);
-  while (!converged)
+  int minIter = 100;
+  while (!converged || minIter--)
   {
     pcl::PointCloud<pcl::PointXYZ> transformed2 (*subCloud2);
     std::vector<double> subErrors (transformed2.size());
@@ -697,15 +748,16 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
 
     Eigen::Vector3d centroid1 = Eigen::Vector3d::Zero();
     Eigen::Vector3d centroid2 = Eigen::Vector3d::Zero();
-    double sum_num = 0.0;
-    double sum_den = 0.0;
-    double scale;
 
     double normalization1 = 0.0;
     double normalization2 = 0.0;
     for (size_t i = 0; i < subPairs.size(); ++i)
     {
-      double weight = 1.0/(sqrt(sqrt(subVars1[subPairs[i]])*sqrt(subVars2[i])));
+#ifdef WEIGHTS
+      double weight = 1.0/(sqrt(subVars1[subPairs[i]]*subVars2[i]));
+#else
+      double weight = 1.0;
+#endif
 
       const pcl::PointXYZ & point1 = subCloud1->points[subPairs[i]];
       weights.push_back (weight);
@@ -719,19 +771,6 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
     centroid1 /= normalization1;
     centroid2 /= normalization2;
 
-    for (size_t i = 0; i < subPairs.size(); ++i)
-    {
-      const pcl::PointXYZ & point1 = subCloud1->points[subPairs[i]];
-      const pcl::PointXYZ & point2 = subCloud2->points[i];
-      Eigen::Vector3d r = Eigen::Vector3d (point1.x, point1.y, point1.z) - centroid1;
-      Eigen::Vector3d l = Eigen::Vector3d (point2.x, point2.y, point2.z) - centroid2;
-
-      sum_num += r.dot(r);
-      sum_den += l.dot(l);
-    }
-
-    scale = sqrt(sum_num / sum_den);
-
     std::vector<Eigen::Vector3d> right_zm;
     std::vector<Eigen::Vector3d> left_zm;
     for (size_t i = 0; i < subPairs.size(); ++i)
@@ -742,11 +781,18 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
       Eigen::Vector3d l = Eigen::Vector3d (point2.x, point2.y, point2.z) - centroid2;
 
       right_zm.push_back (r);
-      left_zm.push_back (scale*l);
+      left_zm.push_back (l);
     }
 
-    Eigen::Quaterniond R = get_rotation (right_zm, left_zm, weights);
-    T = Eigen::Translation3d(centroid1)*R*Eigen::Translation3d(-centroid2);
+    if (constrainRotation)
+    {
+      T = Eigen::Translation3d(centroid1)*Eigen::Translation3d(-centroid2);
+    }
+    else
+    {
+      Eigen::Quaterniond R = get_rotation (right_zm, left_zm, weights);
+      T = Eigen::Translation3d(centroid1)*R*Eigen::Translation3d(-centroid2);
+    }
   }
 
   Eigen::Affine3d fullT2 = T*Eigen::Translation3d (translation2)*Eigen::Quaterniond (rotation2);
@@ -756,11 +802,19 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   Eigen::Matrix3d rotationObserved = fullT2.rotation();
   const Eigen::Matrix3d rotationObserver = rotation1;
 
+  Eigen::Affine3d trans = fullT2*(Eigen::Translation3d(translation1)*Eigen::Quaterniond(rotation1)).inverse();
+
   Eigen::Vector3d observationTranslation = rotationObserved.transpose()*(translationObserver - translationObserved);
   Eigen::Vector3d observationRotation = matrix2euler (rotationObserved.transpose()*rotationObserver);
   Toro3DEdge edge (cloudID2, cloudID1, observationTranslation[0], observationTranslation[1], observationTranslation[2], observationRotation[0], observationRotation[1], observationRotation[2]);
   omp_set_lock (&bundle_lock);
   toroFile.AddEdge (edge);
+
+#if 0
+  bpsfmFile.AddPair (BPSFMCameraPair (cloudID1, cloudID2, rotationObserved*rotationObserver.transpose(), rotationObserver.transpose()*(translationObserved - translationObserver)));
+#else
+  bpsfmFile.AddPair (BPSFMCameraPair (cloudID1, cloudID2, rotationObserved*rotationObserver.transpose(), rotationObserver.transpose()*(translationObserved - translationObserver), translationObserved - translationObserver));
+#endif
   omp_unset_lock (&bundle_lock);
 
   for (std::map<int,SampleData>::const_iterator i = subSamples2.begin(); i != subSamples2.end(); ++i)
@@ -882,6 +936,7 @@ icp_align (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud1,
   std::cerr << "---" << std::endl;
   omp_unset_lock (&cerr_lock);
 #endif
+  return T;
 }
 
 void 
@@ -899,7 +954,7 @@ SampleCloud (pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr cloud,
   pcl::octree::OctreePointCloud<pcl::PointXYZRGBNormal> octree (1);
   octree.setInputCloud (cloud);
   octree.addPointsFromInputCloud ();
-  std::vector<pcl::PointXYZRGBNormal> centers;
+  std::vector<pcl::PointXYZRGBNormal,Eigen::aligned_allocator<pcl::PointXYZRGBNormal> > centers;
   octree.getOccupiedVoxelCenters (centers);
   for (size_t i = 0; i < centers.size(); ++i)
   {
@@ -1089,6 +1144,8 @@ main ( int argc, char * * argv )
   tracksFile.save (options.output + "/tracks_augmented.txt");
   TIME_END
 
+  BPSFMFile bpsfmFile;
+
   std::ifstream images ( options.listFile.c_str () );
   if ( !images )
   {
@@ -1153,6 +1210,15 @@ main ( int argc, char * * argv )
       assert (cin);
     }
   }
+#ifdef HIGHRES
+  cv::Mat aBig, bBig, cBig;
+  cv::resize (a, aBig, cv::Size(2*a.cols, 2*a.rows), 0, 0, cv::INTER_NEAREST);
+  cv::resize (b, bBig, cv::Size(2*b.cols, 2*b.rows), 0, 0, cv::INTER_NEAREST);
+  cv::resize (c, cBig, cv::Size(2*c.cols, 2*c.rows), 0, 0, cv::INTER_NEAREST);
+  a = aBig;
+  b = bBig;
+  c = cBig;
+#endif
   TIME_END
 
   const std::vector<BundleCamera> & cameras = bundleFile.GetCameras();
@@ -1177,7 +1243,25 @@ main ( int argc, char * * argv )
     double psi = orient [2];
 
     toroFile.AddVertex (Toro3DVertex (i, x, y, z, phi, theta, psi));
+
+    bpsfmFile.AddCamera (BPSFMCamera(i, orientation, position));
   }
+
+#ifdef WHITELIST
+  TIME_BEGIN ("Reading whitelist")
+  std::set<int> whitelist;
+  std::ifstream whitelistFile ("/home/kmatzen/whitelist");
+  while (whitelistFile)
+  {
+    int entry;
+    if (!(whitelistFile >> entry))
+    {
+      break;
+    }
+    whitelist.insert (entry);
+  }
+  TIME_END
+#endif
 
   size_t list_index = options.listFile.find_last_of ( "/" );
   std::vector<std::string> colorFilenames (imageList.size());
@@ -1191,6 +1275,12 @@ main ( int argc, char * * argv )
   {
 #ifdef SMALL_RUN
     if (i > 275)//238)
+    {
+      continue;
+    }
+#endif
+#ifdef WHITELIST
+    if (!whitelist.count (i))
     {
       continue;
     }
@@ -1218,7 +1308,11 @@ main ( int argc, char * * argv )
       continue;
     }
     std::string depthFilename ( colorFilename );
+#ifdef JOINT_BILATERAL_DATA
+    depthFilename.replace ( replacement, suffix.size(), "depth.filtered" );
+#else
     depthFilename.replace ( replacement, suffix.size(), "depth.raw" );
+#endif
     colorFilenames [i] = colorFilename;
     depthFilenames [i] = depthFilename;
 
@@ -1264,8 +1358,8 @@ main ( int argc, char * * argv )
 
     int maxKey;
     if (!(keyFile >> maxKey))
-    {
-      continue;
+{
+continue;
     }
 
 #pragma omp critical
@@ -1453,7 +1547,7 @@ main ( int argc, char * * argv )
     AlignmentDetails & details = alignmentDetails [i];
     if (!details.planar)
     {
-      if (details.cost < 0.1)
+      if (details.cost < 0.5)
       {
         details.cost = 0;
         add_edge (details.i, details.j, g_cc);
@@ -1479,10 +1573,12 @@ main ( int argc, char * * argv )
     {
       std::cout << count << " ";
     }
+#ifndef IGNORE_CC_THRESHOLD
     if (count < threshold_cc_size)
     {
       blacklist_component.insert (i);
     }
+#endif
   }
   std::cout << std::endl;
   std::set<int> bad_cameras;
@@ -1632,13 +1728,32 @@ main ( int argc, char * * argv )
       {
         continue;
       }
-      icp_align (cloud1, cloud2, tree, 
+      Eigen::Affine3d T = icp_align (cloud1, cloud2, tree, 
                  translation1, translation2, rotation1, rotation2,
                  variances1, variances2, 
-                 measurements1, measurements2, 
-                 bundleFile, coordsFile, tracksFile, toroFile,
+                 measurements1, measurements2, options.constrainRotation, 
+                 bundleFile, coordsFile, tracksFile, toroFile, bpsfmFile,
                  size1, size2, i, j, 
                  depthFilenames [i], depthFilenames [j],
+                 samples [i], samples [j]);
+      Eigen::Affine3d T_temp = T*Eigen::Translation3d(translation2)*Eigen::Quaterniond (rotation2);
+      rotation2 = T_temp.rotation();
+      translation2 = T_temp.translation();
+      for (pcl::PointCloud<pcl::PointXYZRGBNormal>::iterator iter = cloud2->begin(); iter != cloud2->end(); ++iter)
+      {
+        Eigen::Vector3d p (iter->x, iter->y, iter->z);
+	p = T*p;
+	iter->x = p[0];
+	iter->y = p[1];
+	iter->z = p[2];
+      }
+      Eigen::Affine3d T2 = icp_align (cloud1, cloud2, tree,
+                 translation1, translation2, rotation1, rotation2,
+                 variances1, variances2,
+                 measurements1, measurements2, options.constrainRotation,
+                 bundleFile, coordsFile, tracksFile, toroFile, bpsfmFile,
+                 size1, size2, i, j,
+                 depthFilenames [i]+"-trans", depthFilenames [j]+"-trans",
                  samples [i], samples [j]);
     }
   }
@@ -1648,6 +1763,7 @@ main ( int argc, char * * argv )
   coordsFile.save (options.output + "/coords_augmented.txt");
   tracksFile.save (options.output + "/tracks_augmented.txt");
   toroFile.save (options.output + "/toro.graph");
+  bpsfmFile.Save (options.output + "/bpsfm");
 
   omp_destroy_lock (&cout_lock);
   omp_destroy_lock (&cerr_lock);
